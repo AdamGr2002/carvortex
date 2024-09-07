@@ -11,7 +11,7 @@ import Link from 'next/link'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast, ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
-
+export const dynamic = 'force-dynamic'
 interface Car {
   id: string
   imageUrl: string
