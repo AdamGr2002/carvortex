@@ -4,23 +4,28 @@
 import { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
-import { ThumbsUp, ThumbsDown, RefreshCw, Trophy, X, DollarSign } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, RefreshCw, Trophy, X, Download } from 'lucide-react'
 import { Input } from "@/components/ui/input"
 import { useUser, SignInButton, UserButton, SignUpButton } from "@clerk/nextjs"
 import Link from 'next/link'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { loadStripe } from '@stripe/stripe-js'
-
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
+import { toast, ToastContainer } from 'react-toastify'
+import 'react-toastify/dist/ReactToastify.css'
 
 interface Car {
-  id: number
+  id: string
   imageUrl: string
   votes: number
   title: string
   description: string
   style: string
   environment: string
+}
+
+interface User {
+  id: string
+  email: string
+  credits: number
 }
 
 export default function FutureCarsGallery() {
@@ -31,78 +36,86 @@ export default function FutureCarsGallery() {
   const [environment, setEnvironment] = useState("city street")
   const { isSignedIn, user } = useUser()
   const [selectedCar, setSelectedCar] = useState<Car | null>(null)
-  const [credits, setCredits] = useState(0)
+  const [userData, setUserData] = useState<User | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    const storedCars = localStorage.getItem('cars')
-    if (storedCars) {
-      setCars(JSON.parse(storedCars))
-    } else {
-      fetchCars()
-    }
-
+    fetchCars()
     if (isSignedIn) {
-      const storedCredits = localStorage.getItem('credits')
-      if (storedCredits) {
-        setCredits(JSON.parse(storedCredits))
-      } else {
-        fetchCredits()
-      }
+      fetchUserData()
     }
   }, [isSignedIn])
 
-  useEffect(() => {
-    localStorage.setItem('cars', JSON.stringify(cars))
-  }, [cars])
-
-  useEffect(() => {
-    if (isSignedIn) {
-      localStorage.setItem('credits', JSON.stringify(credits))
-    }
-  }, [credits, isSignedIn])
-
   const fetchCars = async () => {
-    const response = await fetch('/api/cars')
-    const data = await response.json()
-    setCars(data)
+    try {
+      const response = await fetch('/api/cars')
+      if (!response.ok) {
+        throw new Error('Failed to fetch cars')
+      }
+      const data = await response.json()
+      if (Array.isArray(data)) {
+        setCars(data)
+      } else {
+        console.error('Fetched data is not an array:', data)
+        setCars([])
+      }
+    } catch (error) {
+      console.error('Error fetching cars:', error)
+      setError('Failed to load cars. Please try again later.')
+      setCars([])
+    }
   }
 
-  const fetchCredits = async () => {
-    const response = await fetch('/api/credits')
-    const data = await response.json()
-    setCredits(data.credits)
+  const fetchUserData = async () => {
+    try {
+      const response = await fetch('/api/users')
+      if (!response.ok) {
+        throw new Error('Failed to fetch user data')
+      }
+      const data = await response.json()
+      setUserData(data)
+    } catch (error) {
+      console.error('Error fetching user data:', error)
+      setError('Failed to load user data. Please try again later.')
+    }
   }
 
-  const handleVote = async (id: number, voteType: 'up' | 'down') => {
+  const handleVote = async (id: string, voteType: 'up' | 'down') => {
     if (!isSignedIn) {
-      alert('Please sign in to vote')
+      toast.error('Please sign in to vote')
       return
     }
 
-    const response = await fetch('/api/cars', {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ id, vote: voteType }),
-    })
+    try {
+      const response = await fetch('/api/cars', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ id, vote: voteType }),
+      })
 
-    if (response.ok) {
+      if (!response.ok) {
+        throw new Error('Failed to vote')
+      }
+
       const updatedCar = await response.json()
       setCars(cars.map(car => car.id === updatedCar.id ? updatedCar : car))
-    } else {
-      const error = await response.json()
-      alert(error.error)
+      toast.success('Vote recorded successfully!')
+    } catch (error) {
+      console.error('Error voting:', error)
+      toast.error('Failed to vote. Please try again.')
     }
   }
 
   const handleGenerateNew = async () => {
-    if (credits < 1) {
-      alert('You need to purchase more credits to generate a new car.')
+    if (!userData || userData.credits < 1) {
+      toast.error('You need more credits to generate a new car.')
       return
     }
 
     setIsGenerating(true)
+    setError(null)
     try {
       const response = await fetch('/api/generate-car', {
         method: 'POST',
@@ -118,10 +131,8 @@ export default function FutureCarsGallery() {
 
       const data = await response.json()
 
-      const newCar: Car = {
-        id: Date.now(),
+      const newCar = {
         imageUrl: data.imageUrl,
-        votes: 0,
         title: data.title,
         description: data.description,
         style: style,
@@ -136,36 +147,28 @@ export default function FutureCarsGallery() {
         body: JSON.stringify(newCar),
       })
 
-      if (carResponse.ok) {
-        const savedCar = await carResponse.json()
-        setCars([...cars, savedCar])
-        setCredits(credits - 1)
+      if (!carResponse.ok) {
+        throw new Error('Failed to save new car')
       }
+
+      const savedCar = await carResponse.json()
+      setCars(prevCars => [...prevCars, savedCar])
+
+      await fetch('/api/users', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ credits: -1 }),
+      })
+      fetchUserData()
+      toast.success('New car generated successfully!')
     } catch (error) {
       console.error('Error generating car:', error)
-      alert('Failed to generate car. Please try again.')
+      setError('Failed to generate car. Please try again.')
+      toast.error('Failed to generate car. Please try again.')
     } finally {
       setIsGenerating(false)
-    }
-  }
-
-  const handleBuyCredits = async () => {
-    const stripe = await stripePromise
-    const response = await fetch('/api/create-checkout-session', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ amount: 100 }), // $1.00 for 1 credit
-    })
-
-    const session = await response.json()
-    const result = await stripe!.redirectToCheckout({
-      sessionId: session.id,
-    })
-
-    if (result.error) {
-      alert(result.error.message)
     }
   }
 
@@ -173,8 +176,28 @@ export default function FutureCarsGallery() {
     setSelectedCar(null)
   }
 
+  const handleDownload = async (imageUrl: string, title: string) => {
+    try {
+      const response = await fetch(imageUrl)
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `${title.replace(/\s+/g, '_')}.png`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+      toast.success('Image downloaded successfully!')
+    } catch (error) {
+      console.error('Error downloading image:', error)
+      toast.error('Failed to download image. Please try again.')
+    }
+  }
+
   return (
     <div className="container mx-auto p-4">
+      <ToastContainer position="bottom-right" />
       <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
         <h1 className="text-3xl font-bold">Futuristic AI Cars Gallery</h1>
         <div className="flex flex-wrap items-center gap-4">
@@ -187,11 +210,7 @@ export default function FutureCarsGallery() {
           {isSignedIn ? (
             <>
               <div className="flex items-center gap-2">
-                <span>Credits: {credits}</span>
-                <Button onClick={handleBuyCredits} variant="outline">
-                  <DollarSign className="w-4 h-4 mr-2" />
-                  Buy Credits
-                </Button>
+                <span>Credits: {userData?.credits ?? 'Loading...'}</span>
               </div>
               <UserButton afterSignOutUrl="/" />
             </>
@@ -238,7 +257,7 @@ export default function FutureCarsGallery() {
               <SelectItem value="nature">Nature</SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={handleGenerateNew} disabled={isGenerating || credits < 1} className="w-full sm:w-auto">
+          <Button onClick={handleGenerateNew} disabled={isGenerating || !userData || userData.credits < 1} className="w-full sm:w-auto">
             {isGenerating ? (
               <>
                 <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -253,6 +272,12 @@ export default function FutureCarsGallery() {
           </Button>
         </div>
       </div>
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+          <strong className="font-bold">Error: </strong>
+          <span className="block sm:inline">{error}</span>
+        </div>
+      )}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
         {cars.map((car) => (
           <Card key={car.id} className="overflow-hidden cursor-pointer" onClick={() => setSelectedCar(car)}>
@@ -287,13 +312,17 @@ export default function FutureCarsGallery() {
             </div>
             <div className="p-4">
               <img src={selectedCar.imageUrl} alt={selectedCar.title} className="w-full h-auto rounded-lg" />
-              <p className="mt-4 text-lg">Votes: {selectedCar.votes}</p>
-              <p className="mt-2 text-gray-600">{selectedCar.description}</p>
-              <p className="mt-2 text-sm text-gray-500">Style: {selectedCar.style}</p>
-              <p className="mt-1 text-sm text-gray-500">Environment: {selectedCar.environment}</p>
+              <p className="mt-4 text-lg text-red-500">Votes: {selectedCar.votes}</p>
+              <p className="mt-2 text-black">{selectedCar.description}</p>
+              <p className="mt-2 text-sm text-black">Style: {selectedCar.style}</p>
+              <p className="mt-1 text-sm text-black">Environment: {selectedCar.environment}</p>
             </div>
             <div className="sticky bottom-0 flex justify-end p-4 border-t bg-white">
-              <Button variant="outline" onClick={closeModal}>Close</Button>
+              <Button variant="outline" onClick={() => handleDownload(selectedCar.imageUrl, selectedCar.title)} className="mr-2 bg-black">
+                <Download className="w-4 h-4 mr-2 " />
+                Download Image
+              </Button>
+              <Button variant="outline" onClick={closeModal} className='bg-black'>Close</Button>
             </div>
           </div>
         </div>

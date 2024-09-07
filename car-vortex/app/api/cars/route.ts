@@ -1,86 +1,144 @@
 /* eslint-disable prefer-const */
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { handleCORS } from '@/lib/cors'
-
-interface Car {
-  id: number
-  imageUrl: string
-  votes: number
-  title: string
-  description: string
-  style: string
-  environment: string
-  voters: string[]
-  createdAt: Date
-}
-
-let cars: Car[] = []
+import { prisma } from '@/lib/prisma'
 
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url)
-  const period = searchParams.get('period')
+  try {
+    const { searchParams } = new URL(req.url)
+    const period = searchParams.get('period')
 
-  let filteredCars = [...cars]
-
-  if (period) {
-    const now = new Date()
-    const periodStart = new Date(now)
-
-    switch (period) {
-      case '24h':
-        periodStart.setHours(now.getHours() - 24)
-        break
-      case '7d':
-        periodStart.setDate(now.getDate() - 7)
-        break
-      case '30d':
-        periodStart.setDate(now.getDate() - 30)
-        break
-      // 'all' or any other value will return all cars
+    let query: any = {
+      orderBy: {
+        votes: 'desc',
+      },
     }
 
-    if (period !== 'all') {
-      filteredCars = filteredCars.filter(car => car.createdAt >= periodStart)
+    if (period) {
+      const now = new Date()
+      const periodStart = new Date(now)
+
+      switch (period) {
+        case '24h':
+          periodStart.setHours(now.getHours() - 24)
+          break
+        case '7d':
+          periodStart.setDate(now.getDate() - 7)
+          break
+        case '30d':
+          periodStart.setDate(now.getDate() - 30)
+          break
+        // 'all' or any other value will return all cars
+      }
+
+      if (period !== 'all') {
+        query.where = {
+          createdAt: {
+            gte: periodStart,
+          },
+        }
+      }
     }
+
+    const cars = await prisma.car.findMany(query)
+    return handleCORS(req, NextResponse.json(cars))
+  } catch (error) {
+    console.error('Error in GET /api/cars:', error)
+    return handleCORS(req, NextResponse.json({ error: 'Internal Server Error' }, { status: 500 }))
   }
-
-  // Sort cars by votes in descending order
-  filteredCars.sort((a, b) => b.votes - a.votes)
-
-  return handleCORS(req, NextResponse.json(filteredCars))
 }
 
 export async function POST(req: NextRequest) {
-  const car: Car = await req.json()
-  car.id = cars.length + 1
-  car.votes = 0
-  car.voters = []
-  car.createdAt = new Date()
-  cars.push(car)
-  return handleCORS(req, NextResponse.json(car, { status: 201 }))
+  try {
+    const { userId } = auth()
+    if (!userId) {
+      return handleCORS(req, NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+    }
+
+    const carData = await req.json()
+
+    // Check if the user exists
+    let user = await prisma.user.findUnique({
+      where: { id: userId },
+    })
+
+    // If the user doesn't exist, create them
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          id: userId,
+          email: 'placeholder@example.com', // You might want to get this from Clerk
+        },
+      })
+    }
+
+    // Create the car
+    const result = await prisma.car.create({
+      data: {
+        userId,
+        imageUrl: carData.imageUrl,
+        title: carData.title,
+        description: carData.description,
+        style: carData.style,
+        environment: carData.environment,
+      },
+    })
+
+    return handleCORS(req, NextResponse.json(result, { status: 201 }))
+  } catch (error) {
+    console.error('Error in POST /api/cars:', error)
+    return handleCORS(req, NextResponse.json({ error: 'Internal Server Error' }, { status: 500 }))
+  }
 }
 
 export async function PATCH(req: NextRequest) {
-  const { userId } = auth()
-  if (!userId) {
-    return handleCORS(req, NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
-  }
+  try {
+    const { userId } = auth()
+    if (!userId) {
+      return handleCORS(req, NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+    }
 
-  const { id, vote }: { id: number; vote: 'up' | 'down' } = await req.json()
-  const carIndex = cars.findIndex(car => car.id === id)
-  
-  if (carIndex === -1) {
-    return handleCORS(req, NextResponse.json({ error: 'Car not found' }, { status: 404 }))
-  }
+    const { id, vote: voteType } = await req.json()
 
-  if (cars[carIndex].voters.includes(userId)) {
-    return handleCORS(req, NextResponse.json({ error: 'You have already voted for this car' }, { status: 400 }))
-  }
+    const existingVote = await prisma.vote.findUnique({
+      where: {
+        carId_userId: {
+          carId: id,
+          userId,
+        },
+      },
+    })
 
-  cars[carIndex].votes += vote === 'up' ?  1 : -1
-  cars[carIndex].voters.push(userId)
-  return handleCORS(req, NextResponse.json(cars[carIndex]))
+    if (existingVote) {
+      return handleCORS(req, NextResponse.json({ error: 'You have already voted for this car' }, { status: 400 }))
+    }
+
+    const updatedCar = await prisma.$transaction(async (prisma) => {
+      await prisma.vote.create({
+        data: {
+          carId: id,
+          userId,
+          voteType,
+        },
+      })
+
+      return prisma.car.update({
+        where: { id },
+        data: {
+          votes: {
+            increment: voteType === 'up' ? 1 : -1,
+          },
+        },
+      })
+    })
+
+    return handleCORS(req, NextResponse.json(updatedCar))
+  } catch (error) {
+    console.error('Error in PATCH /api/cars:', error)
+    return handleCORS(req, NextResponse.json({ error: 'Internal Server Error' }, { status: 500 }))
+  }
 }
 
 export async function OPTIONS(req: NextRequest) {
