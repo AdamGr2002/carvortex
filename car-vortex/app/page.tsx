@@ -4,11 +4,14 @@
 import { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
-import { ThumbsUp, ThumbsDown, RefreshCw, Trophy, X } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, RefreshCw, Trophy, X, DollarSign } from 'lucide-react'
 import { Input } from "@/components/ui/input"
-import { useUser, SignInButton, UserButton } from "@clerk/nextjs"
+import { useUser, SignInButton, UserButton, SignUpButton } from "@clerk/nextjs"
 import Link from 'next/link'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { loadStripe } from '@stripe/stripe-js'
+
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!)
 
 interface Car {
   id: number
@@ -28,15 +31,46 @@ export default function FutureCarsGallery() {
   const [environment, setEnvironment] = useState("city street")
   const { isSignedIn, user } = useUser()
   const [selectedCar, setSelectedCar] = useState<Car | null>(null)
+  const [credits, setCredits] = useState(0)
 
   useEffect(() => {
-    fetchCars()
-  }, [])
+    const storedCars = localStorage.getItem('cars')
+    if (storedCars) {
+      setCars(JSON.parse(storedCars))
+    } else {
+      fetchCars()
+    }
+
+    if (isSignedIn) {
+      const storedCredits = localStorage.getItem('credits')
+      if (storedCredits) {
+        setCredits(JSON.parse(storedCredits))
+      } else {
+        fetchCredits()
+      }
+    }
+  }, [isSignedIn])
+
+  useEffect(() => {
+    localStorage.setItem('cars', JSON.stringify(cars))
+  }, [cars])
+
+  useEffect(() => {
+    if (isSignedIn) {
+      localStorage.setItem('credits', JSON.stringify(credits))
+    }
+  }, [credits, isSignedIn])
 
   const fetchCars = async () => {
     const response = await fetch('/api/cars')
     const data = await response.json()
     setCars(data)
+  }
+
+  const fetchCredits = async () => {
+    const response = await fetch('/api/credits')
+    const data = await response.json()
+    setCredits(data.credits)
   }
 
   const handleVote = async (id: number, voteType: 'up' | 'down') => {
@@ -63,6 +97,11 @@ export default function FutureCarsGallery() {
   }
 
   const handleGenerateNew = async () => {
+    if (credits < 1) {
+      alert('You need to purchase more credits to generate a new car.')
+      return
+    }
+
     setIsGenerating(true)
     try {
       const response = await fetch('/api/generate-car', {
@@ -100,6 +139,7 @@ export default function FutureCarsGallery() {
       if (carResponse.ok) {
         const savedCar = await carResponse.json()
         setCars([...cars, savedCar])
+        setCredits(credits - 1)
       }
     } catch (error) {
       console.error('Error generating car:', error)
@@ -109,11 +149,35 @@ export default function FutureCarsGallery() {
     }
   }
 
+  const handleBuyCredits = async () => {
+    const stripe = await stripePromise
+    const response = await fetch('/api/create-checkout-session', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ amount: 100 }), // $1.00 for 1 credit
+    })
+
+    const session = await response.json()
+    const result = await stripe!.redirectToCheckout({
+      sessionId: session.id,
+    })
+
+    if (result.error) {
+      alert(result.error.message)
+    }
+  }
+
+  const closeModal = () => {
+    setSelectedCar(null)
+  }
+
   return (
     <div className="container mx-auto p-4">
-      <div className="flex justify-between items-center mb-6">
+      <div className="flex flex-col sm:flex-row justify-between items-center mb-6 gap-4">
         <h1 className="text-3xl font-bold">Futuristic AI Cars Gallery</h1>
-        <div className="flex items-center gap-4">
+        <div className="flex flex-wrap items-center gap-4">
           <Link href="/top-cars">
             <Button variant="outline">
               <Trophy className="w-4 h-4 mr-2" />
@@ -121,11 +185,25 @@ export default function FutureCarsGallery() {
             </Button>
           </Link>
           {isSignedIn ? (
-            <UserButton afterSignOutUrl="/" />
+            <>
+              <div className="flex items-center gap-2">
+                <span>Credits: {credits}</span>
+                <Button onClick={handleBuyCredits} variant="outline">
+                  <DollarSign className="w-4 h-4 mr-2" />
+                  Buy Credits
+                </Button>
+              </div>
+              <UserButton afterSignOutUrl="/" />
+            </>
           ) : (
-            <SignInButton mode="modal">
-              <Button>Sign In</Button>
-            </SignInButton>
+            <div className="flex gap-2">
+              <SignInButton mode="modal">
+                <Button variant="outline">Sign In</Button>
+              </SignInButton>
+              <SignUpButton mode="modal">
+                <Button>Sign Up</Button>
+              </SignUpButton>
+            </div>
           )}
         </div>
       </div>
@@ -137,7 +215,7 @@ export default function FutureCarsGallery() {
           placeholder="Enter a prompt for the AI car"
           className="flex-grow"
         />
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           <Select value={style} onValueChange={setStyle}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Select style" />
@@ -160,7 +238,7 @@ export default function FutureCarsGallery() {
               <SelectItem value="nature">Nature</SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={handleGenerateNew} disabled={isGenerating}>
+          <Button onClick={handleGenerateNew} disabled={isGenerating || credits < 1} className="w-full sm:w-auto">
             {isGenerating ? (
               <>
                 <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
@@ -169,7 +247,7 @@ export default function FutureCarsGallery() {
             ) : (
               <>
                 <RefreshCw className="w-4 h-4 mr-2" />
-                Generate New Car
+                Generate New Car (1 Credit)
               </>
             )}
           </Button>
@@ -199,11 +277,11 @@ export default function FutureCarsGallery() {
         ))}
       </div>
       {selectedCar && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-3xl w-full">
-            <div className="flex justify-between items-center p-4 border-b">
-              <h2 className="text-2xl font-bold">{selectedCar.title}</h2>
-              <Button variant="ghost" onClick={() => setSelectedCar(null)}>
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] overflow-y-auto">
+            <div className="sticky top-0 flex justify-between items-center p-4 border-b bg-white z-10">
+              <h2 className="text-xl sm:text-2xl font-bold truncate">{selectedCar.title}</h2>
+              <Button variant="ghost" onClick={closeModal} className="shrink-0">
                 <X className="w-6 h-6" />
               </Button>
             </div>
@@ -214,8 +292,8 @@ export default function FutureCarsGallery() {
               <p className="mt-2 text-sm text-gray-500">Style: {selectedCar.style}</p>
               <p className="mt-1 text-sm text-gray-500">Environment: {selectedCar.environment}</p>
             </div>
-            <div className="flex justify-end p-4 border-t">
-              <Button variant="outline" onClick={() => setSelectedCar(null)}>Close</Button>
+            <div className="sticky bottom-0 flex justify-end p-4 border-t bg-white">
+              <Button variant="outline" onClick={closeModal}>Close</Button>
             </div>
           </div>
         </div>

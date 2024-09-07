@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@clerk/nextjs/server'
 import { handleCORS } from '@/lib/cors'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
@@ -23,14 +24,33 @@ async function pollForResult(id: string): Promise<any> {
 }
 
 export async function POST(req: NextRequest) {
+  const { userId } = auth()
+  if (!userId) {
+    return handleCORS(req, NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
+  }
+
   if (!REPLICATE_API_TOKEN) {
     return handleCORS(req, NextResponse.json({ error: 'Replicate API token not configured' }, { status: 500 }))
+  }
+
+  // Check if user has enough credits
+  const creditsResponse = await fetch(`${req.nextUrl.origin}/api/credits`, {
+    headers: {
+      Authorization: req.headers.get('Authorization') || '',
+    },
+  })
+  const { credits } = await creditsResponse.json()
+
+  if (credits < 1) {
+    return handleCORS(req, NextResponse.json({ error: 'Not enough credits' }, { status: 400 }))
   }
 
   const { prompt, style, environment } = await req.json()
 
   try {
-    const fullPrompt = `${prompt}, ${style} style, in a ${environment}`
+    const fullPrompt = `A highly detailed, professional photograph of a ${prompt}, ${style} style, in a ${environment}, 8k resolution, realistic lighting, intricate details`
+    const negativePrompt = "low quality, blurry, distorted, unrealistic, cartoon, anime, sketch, drawing"
+
     const response = await fetch("https://api.replicate.com/v1/predictions", {
       method: "POST",
       headers: {
@@ -38,8 +58,17 @@ export async function POST(req: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        version: "ac732df83cea7fff18b8472768c88ad041fa750ff7682a21affe81863cbe77e4", // Stable Diffusion v2.1
-        input: { prompt: fullPrompt }
+        version: "39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b", // Stable Diffusion XL
+        input: {
+          prompt: fullPrompt,
+          negative_prompt: negativePrompt,
+          width: 1024,
+          height: 1024,
+          num_outputs: 1,
+          num_inference_steps: 50,
+          guidance_scale: 7.5,
+          scheduler: "K_EULER_ANCESTRAL",
+        }
       }),
     })
 
@@ -54,6 +83,16 @@ export async function POST(req: NextRequest) {
     // Generate a title and description
     const title = `${style.charAt(0).toUpperCase() + style.slice(1)} ${prompt} in ${environment}`
     const description = `This ${style} style car is a futuristic marvel designed for the ${environment}. It showcases innovative features and a sleek design that pushes the boundaries of automotive engineering.`
+
+    // Deduct a credit
+    await fetch(`${req.nextUrl.origin}/api/credits`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: req.headers.get('Authorization') || '',
+      },
+      body: JSON.stringify({ credits: -1 }),
+    })
 
     return handleCORS(req, NextResponse.json({ 
       imageUrl: result.output[0],
