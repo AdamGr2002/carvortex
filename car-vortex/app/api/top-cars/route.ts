@@ -1,55 +1,60 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 
 export async function GET(req: NextRequest) {
-  try {
-    const { searchParams } = new URL(req.url)
-    const timeFilter = searchParams.get('timeFilter') || 'all'
-    const limit = parseInt(searchParams.get('limit') || '10', 10)
+  const { searchParams } = new URL(req.url)
+  const timeFilter = searchParams.get('timeFilter') || 'all'
+  const limit = parseInt(searchParams.get('limit') || '10', 10)
 
-    let dateFilter: Date | null = null
-    switch (timeFilter) {
-      case '24h':
-        dateFilter = new Date(Date.now() - 24 * 60 * 60 * 1000)
-        break
-      case '7d':
-        dateFilter = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-        break
-      case '30d':
-        dateFilter = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)
-        break
-      default:
-        dateFilter = null
+  try {
+    let whereClause = {}
+    if (timeFilter !== 'all') {
+      const date = new Date()
+      if (timeFilter === 'day') {
+        date.setDate(date.getDate() - 1)
+      } else if (timeFilter === 'week') {
+        date.setDate(date.getDate() - 7)
+      } else if (timeFilter === 'month') {
+        date.setMonth(date.getMonth() - 1)
+      }
+      whereClause = {
+        createdAt: {
+          gte: date
+        }
+      }
     }
 
-    const cars = await prisma.car.findMany({
-      where: dateFilter ? {
-        createdAt: {
-          gte: dateFilter
-        }
-      } : {},
+    const topCars = await prisma.car.findMany({
+      where: whereClause,
       orderBy: {
-        votes: 'desc'
+        votes: {
+          _count: 'desc'
+        }
       },
       take: limit,
       include: {
         user: {
           select: {
-            email: true,
-          },
+            email: true
+          }
         },
-      },
+        votes: true
+      }
     })
 
-    const carsWithDisplayName = cars.map(car => ({
+    const formattedTopCars = topCars.map(car => ({
       ...car,
-      userDisplayName: car.user.email.split('@')[0],
-      user: undefined,
+      votes: car.votes.reduce((acc, vote) => acc + (vote.voteType === 'up' ? 1 : -1), 0),
+      userDisplayName: car.user.email.split('@')[0]
     }))
 
-    return NextResponse.json(carsWithDisplayName)
+    return NextResponse.json(formattedTopCars)
   } catch (error) {
     console.error('Error fetching top cars:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    return NextResponse.json(
+      { error: 'Internal Server Error', details: (error as any).message },
+      { status: 500 }
+    )
   }
 }

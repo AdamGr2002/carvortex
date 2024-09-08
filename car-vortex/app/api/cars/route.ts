@@ -5,21 +5,13 @@ import { prisma } from '@/lib/prisma'
 import { auth } from '@clerk/nextjs/server'
 
 export async function GET(req: NextRequest) {
+  const { searchParams } = new URL(req.url)
+  const page = parseInt(searchParams.get('page') || '1')
+  const limit = parseInt(searchParams.get('limit') || '9')
+  const skip = (page - 1) * limit
+
   try {
-    console.log('Fetching cars...')
-    const { searchParams } = new URL(req.url)
-    const page = parseInt(searchParams.get('page') || '1')
-    const limit = parseInt(searchParams.get('limit') || '9')
-    const skip = (page - 1) * limit
-
-    console.log(`Page: ${page}, Limit: ${limit}, Skip: ${skip}`)
-    console.log('Database URL:', process.env.DATABASE_URL ? 'Set' : 'Not set')
-
-    // Test database connection
-    await prisma.$connect()
-    console.log('Successfully connected to the database')
-
-    const [cars, totalCars] = await Promise.all([
+    const [cars, totalCount] = await prisma.$transaction([
       prisma.car.findMany({
         skip,
         take: limit,
@@ -27,42 +19,37 @@ export async function GET(req: NextRequest) {
         include: {
           user: {
             select: {
-              id: true,
               email: true,
             },
           },
+          votes: true,
         },
       }),
       prisma.car.count(),
     ])
 
-    const totalPages = Math.ceil(totalCars / limit)
+    const totalPages = Math.ceil(totalCount / limit)
 
-    console.log(`Fetched ${cars.length} cars. Total cars: ${totalCars}. Total pages: ${totalPages}`)
+    const carsWithVoteCount = cars.map(car => ({
+      ...car,
+      votes: car.votes.length,
+      userDisplayName: car.user.email.split('@')[0],
+    }))
 
     return NextResponse.json({
-      cars: cars.map(car => ({
-        ...car,
-        userDisplayName: car.user?.email ? car.user.email.split('@')[0] : 'Unknown', // Use email username as display name
-      })),
+      cars: carsWithVoteCount,
       currentPage: page,
       totalPages,
     })
   } catch (error) {
     console.error('Error in GET /api/cars route:', error)
     return NextResponse.json(
-      { 
-        error: 'Internal Server Error', 
-        details: (error as Error).message, 
-        stack: (error as Error).stack,
-        nodeVersion: process.version,
-      },
+      { error: 'Internal Server Error', details: (error as any).message },
       { status: 500 }
     )
-  } finally {
-    await prisma.$disconnect()
   }
 }
+
 export async function POST(req: NextRequest) {
   try {
     const { userId } = auth()
@@ -82,9 +69,20 @@ export async function POST(req: NextRequest) {
         environment,
         userId,
       },
+      include: {
+        user: {
+          select: {
+            email: true,
+          },
+        },
+      },
     })
 
-    return NextResponse.json(newCar)
+    return NextResponse.json({
+      ...newCar,
+      votes: 0,
+      userDisplayName: newCar.user.email.split('@')[0],
+    })
   } catch (error) {
     console.error('Error in POST /api/cars route:', error)
     return NextResponse.json(
@@ -104,20 +102,64 @@ export async function PATCH(req: NextRequest) {
     const body = await req.json()
     const { id, vote } = body
 
-    const car = await prisma.car.findUnique({ where: { id } })
-
-    if (!car) {
-      return NextResponse.json({ error: 'Car not found' }, { status: 404 })
-    }
-
-    const updatedCar = await prisma.car.update({
-      where: { id },
-      data: {
-        votes: vote === 'up' ? car.votes + 1 : car.votes - 1,
+    const existingVote = await prisma.vote.findUnique({
+      where: {
+        userId_carId: {
+          userId: userId,
+          carId: id,
+        },
       },
     })
 
-    return NextResponse.json(updatedCar)
+    let updatedVote
+    if (existingVote) {
+      // Update existing vote
+      updatedVote = await prisma.vote.update({
+        where: {
+          id: existingVote.id,
+        },
+        data: {
+          voteType: vote,
+        },
+      })
+    } else {
+      // Create new vote
+      updatedVote = await prisma.vote.create({
+        data: {
+          userId: userId,
+          carId: id,
+          voteType: vote,
+        },
+      })
+    }
+
+    const updatedCar = await prisma.car.findUnique({
+      where: { id: id },
+      include: {
+        votes: true,
+        user: {
+          select: {
+            email: true,
+          },
+        },
+      },
+    })
+
+    if (!updatedCar) {
+      return NextResponse.json({ error: 'Car not found' }, { status: 404 })
+    }
+
+    const voteCount = updatedCar.votes.reduce((acc, vote) => {
+      if (vote.voteType === 'up') return acc + 1
+      if (vote.voteType === 'down') return acc - 1
+      return acc
+    }, 0)
+
+    return NextResponse.json({
+      ...updatedCar,
+      votes: voteCount,
+      userDisplayName: updatedCar.user.email.split('@')[0],
+    })
   } catch (error) {
     console.error('Error in PATCH /api/cars route:', error)
     return NextResponse.json(
@@ -125,15 +167,4 @@ export async function PATCH(req: NextRequest) {
       { status: 500 }
     )
   }
-}
-
-export async function OPTIONS(req: NextRequest) {
-  return new NextResponse(null, {
-    status: 200,
-    headers: {
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    },
-  })
 }

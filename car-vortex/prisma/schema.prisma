@@ -15,6 +15,7 @@ model User {
   credits   Int      @default(10)
   createdAt DateTime @default(now())
   cars      Car[]
+  votes     Vote[]
 }
 
 model Car {
@@ -25,7 +26,19 @@ model Car {
   description String
   style       String
   environment String
-  votes       Int      @default(0)
+  votes       Vote[]
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id])
+}
+
+model Vote {
+  id        String   @id @default(uuid())
+  userId    String
+  carId     String
+  voteType  String   // 'up' or 'down'
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id])
+  car       Car      @relation(fields: [carId], references: [id])
+
+  @@unique([userId, carId])
 }

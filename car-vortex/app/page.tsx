@@ -4,7 +4,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
-import { ThumbsUp, ThumbsDown, RefreshCw, Trophy, X, ChevronLeft, ChevronRight } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, RefreshCw, Trophy, X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { Input } from "@/components/ui/input"
 import { useUser, SignInButton, UserButton, SignUpButton } from "@clerk/nextjs"
 import Link from 'next/link'
@@ -42,6 +42,7 @@ export default function FutureCarsGallery() {
   const [userData, setUserData] = useState<User | null>(null)
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [votedCars, setVotedCars] = useState<Set<string>>(new Set())
 
   const fetchCars = useCallback(async (page: number) => {
     setIsLoading(true)
@@ -100,6 +101,11 @@ export default function FutureCarsGallery() {
       return
     }
 
+    if (votedCars.has(id)) {
+      toast.error('You have already voted on this car')
+      return
+    }
+
     try {
       const response = await fetch('/api/cars', {
         method: 'PATCH',
@@ -110,11 +116,13 @@ export default function FutureCarsGallery() {
       })
 
       if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`)
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to vote')
       }
 
       const updatedCar = await response.json()
       setCars(cars.map(car => car.id === updatedCar.id ? updatedCar : car))
+      setVotedCars(new Set(votedCars).add(id))
       toast.success('Vote recorded successfully!')
     } catch (error) {
       console.error('Error voting:', error)
@@ -181,6 +189,22 @@ export default function FutureCarsGallery() {
     } finally {
       setIsGenerating(false)
     }
+  }
+
+  const handleDownload = (imageUrl: string, title: string) => {
+    fetch(imageUrl)
+      .then(response => response.blob())
+      .then(blob => {
+        const url = window.URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.style.display = 'none'
+        a.href = url
+        a.download = `${title.replace(/\s+/g, '_')}.png`
+        document.body.appendChild(a)
+        a.click()
+        window.URL.revokeObjectURL(url)
+      })
+      .catch(() => toast.error('Failed to download image'))
   }
 
   const closeModal = () => {
@@ -291,9 +315,17 @@ export default function FutureCarsGallery() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {cars.map((car) => (
-            <Card key={car.id} className="overflow-hidden cursor-pointer" onClick={() => setSelectedCar(car)}>
-              <CardContent className="p-0">
-                <img src={car.imageUrl} alt={car.title} className="w-full h-48 object-cover" />
+            <Card key={car.id} className="overflow-hidden">
+              <CardContent className="p-0 relative">
+                <img src={car.imageUrl} alt={car.title} className="w-full h-48 object-cover cursor-pointer" onClick={() => setSelectedCar(car)} />
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="absolute top-2 right-2"
+                  onClick={() => handleDownload(car.imageUrl, car.title)}
+                >
+                  <Download className="w-4 h-4" />
+                </Button>
               </CardContent>
               <CardFooter className="flex justify-between items-center p-4">
                 <div>
@@ -302,10 +334,18 @@ export default function FutureCarsGallery() {
                   <p className="text-xs text-gray-400">Created by: {car.userDisplayName}</p>
                 </div>
                 <div className="flex space-x-2">
-                  <Button size="sm" onClick={(e) => { e.stopPropagation(); handleVote(car.id, 'up'); }} disabled={!isSignedIn}>
+                  <Button
+                    size="sm"
+                    onClick={() => handleVote(car.id, 'up')}
+                    disabled={!isSignedIn || votedCars.has(car.id)}
+                  >
                     <ThumbsUp className="w-4 h-4" />
                   </Button>
-                  <Button size="sm" onClick={(e) => { e.stopPropagation(); handleVote(car.id, 'down'); }} disabled={!isSignedIn}>
+                  <Button
+                    size="sm"
+                    onClick={() => handleVote(car.id, 'down')}
+                    disabled={!isSignedIn || votedCars.has(car.id)}
+                  >
                     <ThumbsDown className="w-4 h-4" />
                   </Button>
                 </div>
@@ -351,6 +391,10 @@ export default function FutureCarsGallery() {
               <p className="mt-1 text-sm text-gray-500">Created by: {selectedCar.userDisplayName}</p>
             </div>
             <div className="sticky bottom-0 flex justify-end p-4 border-t bg-white">
+              <Button variant="outline" onClick={() => handleDownload(selectedCar.imageUrl, selectedCar.title)} className="mr-2">
+                <Download className="w-4 h-4 mr-2" />
+                Download
+              </Button>
               <Button variant="outline" onClick={closeModal}>Close</Button>
             </div>
           </div>
