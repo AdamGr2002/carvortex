@@ -12,6 +12,8 @@ export async function GET(req: NextRequest) {
     const limit = parseInt(searchParams.get('limit') || '9')
     const skip = (page - 1) * limit
 
+    console.log(`Page: ${page}, Limit: ${limit}, Skip: ${skip}`)
+
     const [cars, totalCars] = await Promise.all([
       prisma.car.findMany({
         skip,
@@ -31,7 +33,7 @@ export async function GET(req: NextRequest) {
 
     const totalPages = Math.ceil(totalCars / limit)
 
-    console.log(`Fetched ${cars.length} cars. Total pages: ${totalPages}`)
+    console.log(`Fetched ${cars.length} cars. Total cars: ${totalCars}. Total pages: ${totalPages}`)
 
     return NextResponse.json({
       cars: cars.map(car => ({
@@ -44,12 +46,11 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error('Error in GET /api/cars route:', error)
     return NextResponse.json(
-      { error: 'Internal Server Error', details: (error as any).message },
+      { error: 'Internal Server Error', details: (error as Error).message, stack: (error as Error).stack },
       { status: 500 }
     )
   }
 }
-
 export async function POST(req: NextRequest) {
   try {
     const { userId } = auth()
