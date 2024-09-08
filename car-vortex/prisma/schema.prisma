@@ -1,19 +1,18 @@
-generator client {
-  provider = "prisma-client-js"
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
-datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
+generator client {
+  provider = "prisma-client-js"
 }
 
 model User {
   id        String   @id
   email     String   @unique
-  credits   Int      @default(10)  // Changed from 0 to 10
+  credits   Int      @default(10)
   createdAt DateTime @default(now())
   cars      Car[]
-  votes     Vote[]
 }
 
 model Car {
@@ -27,17 +26,4 @@ model Car {
   votes       Int      @default(0)
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id])
-  userVotes   Vote[]
-}
-
-model Vote {
-  id        String   @id @default(uuid())
-  carId     String
-  userId    String
-  voteType  String
-  createdAt DateTime @default(now())
-  car       Car      @relation(fields: [carId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
-
-  @@unique([carId, userId])
 }
