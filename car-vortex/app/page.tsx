@@ -54,7 +54,8 @@ export default function FutureCarsGallery() {
     try {
       const response = await fetch(`/api/cars?page=${page}&limit=9`)
       if (!response.ok) {
-        throw new Error('Failed to fetch cars')
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to fetch cars')
       }
       const data = await response.json()
       setCars(data.cars)
@@ -62,7 +63,7 @@ export default function FutureCarsGallery() {
       setCurrentPage(data.currentPage)
     } catch (error) {
       console.error('Error fetching cars:', error)
-      toast.error('Failed to load cars. Please try again later.')
+      toast.error(`Failed to load cars: ${(error as Error).message}`)
     } finally {
       setIsLoading(false)
     }
@@ -72,13 +73,14 @@ export default function FutureCarsGallery() {
     try {
       const response = await fetch('/api/users')
       if (!response.ok) {
-        throw new Error('Failed to fetch user data')
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to fetch user data')
       }
       const data = await response.json()
       setUserData(data)
     } catch (error) {
       console.error('Error fetching user data:', error)
-      toast.error('Failed to load user data. Please try again later.')
+      toast.error(`Failed to load user data: ${(error as Error).message}`)
     }
   }
 
