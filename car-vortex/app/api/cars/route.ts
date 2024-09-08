@@ -1,9 +1,10 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
+import { prisma, setupDatabase, saveDatabase } from '@/lib/prisma'
 
 export async function GET(req: NextRequest) {
   try {
+    await setupDatabase()
+    
     console.log('Fetching cars...')
     const { searchParams } = new URL(req.url)
     const page = parseInt(searchParams.get('page') || '1', 10)
@@ -46,12 +47,14 @@ export async function GET(req: NextRequest) {
     })
   } catch (error) {
     console.error('Error in /api/cars route:', error)
-    return NextResponse.json({ error: 'Internal Server Error', details: (error as any).message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error', details: (error as Error).message }, { status: 500 })
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
+    await setupDatabase()
+    
     const body = await req.json()
     const { imageUrl, title, description, style, environment, userId } = body
 
@@ -66,15 +69,19 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    await saveDatabase()
+
     return NextResponse.json(car)
   } catch (error) {
     console.error('Error in POST /api/cars route:', error)
-    return NextResponse.json({ error: 'Internal Server Error', details: (error as any).message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error', details: (error as Error).message }, { status: 500 })
   }
 }
 
 export async function PATCH(req: NextRequest) {
   try {
+    await setupDatabase()
+    
     const body = await req.json()
     const { id, vote } = body
 
@@ -87,9 +94,11 @@ export async function PATCH(req: NextRequest) {
       },
     })
 
+    await saveDatabase()
+
     return NextResponse.json(car)
   } catch (error) {
     console.error('Error in PATCH /api/cars route:', error)
-    return NextResponse.json({ error: 'Internal Server Error', details: (error as any).message }, { status: 500 })
+    return NextResponse.json({ error: 'Internal Server Error', details: (error as Error).message }, { status: 500 })
   }
 }
