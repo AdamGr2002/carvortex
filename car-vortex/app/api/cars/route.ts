@@ -13,6 +13,11 @@ export async function GET(req: NextRequest) {
     const skip = (page - 1) * limit
 
     console.log(`Page: ${page}, Limit: ${limit}, Skip: ${skip}`)
+    console.log('Database URL:', process.env.DATABASE_URL ? 'Set' : 'Not set')
+
+    // Test database connection
+    await prisma.$connect()
+    console.log('Successfully connected to the database')
 
     const [cars, totalCars] = await Promise.all([
       prisma.car.findMany({
@@ -38,7 +43,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({
       cars: cars.map(car => ({
         ...car,
-        userDisplayName: car.user.email.split('@')[0], // Use email username as display name
+        userDisplayName: car.user?.email ? car.user.email.split('@')[0] : 'Unknown', // Use email username as display name
       })),
       currentPage: page,
       totalPages,
@@ -46,9 +51,16 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     console.error('Error in GET /api/cars route:', error)
     return NextResponse.json(
-      { error: 'Internal Server Error', details: (error as Error).message, stack: (error as Error).stack },
+      { 
+        error: 'Internal Server Error', 
+        details: (error as Error).message, 
+        stack: (error as Error).stack,
+        nodeVersion: process.version,
+      },
       { status: 500 }
     )
+  } finally {
+    await prisma.$disconnect()
   }
 }
 export async function POST(req: NextRequest) {
