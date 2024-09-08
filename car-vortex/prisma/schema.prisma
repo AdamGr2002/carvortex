@@ -12,6 +12,7 @@ generator client {
 model User {
   id        String   @id
   email     String   @unique
+  name      String?
   credits   Int      @default(10)
   createdAt DateTime @default(now())
   cars      Car[]
@@ -23,20 +24,30 @@ model Car {
   userId      String
   imageUrl    String
   title       String
+  type        String
   description String
   style       String
   environment String
-  votes       Vote[]
+  featured    Boolean  @default(false)
+  votes       Int      @default(0)
   createdAt   DateTime @default(now())
   user        User     @relation(fields: [userId], references: [id])
+  favorites   Favorite[]
+  votedBy     Vote[]
 }
+model Favorite {
+  id     String @id @default(uuid())
+  userId String
+  carId  String
+  car    Car    @relation(fields: [carId], references: [id])
 
+  @@unique([userId, carId])
+}
 model Vote {
   id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
   userId    String
   carId     String
-  voteType  String   // 'up' or 'down'
-  createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id])
   car       Car      @relation(fields: [carId], references: [id])
 

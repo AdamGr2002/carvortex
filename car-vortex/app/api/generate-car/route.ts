@@ -1,7 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
-import { handleCORS } from '@/lib/cors'
+import { prisma } from '@/lib/prisma'
+import cloudinary from '@/lib/cloudinary'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 
@@ -24,31 +25,34 @@ async function pollForResult(id: string): Promise<any> {
 }
 
 export async function POST(req: NextRequest) {
-  const { userId } = auth()
-  if (!userId) {
-    return handleCORS(req, NextResponse.json({ error: 'Unauthorized' }, { status: 401 }))
-  }
-
-  if (!REPLICATE_API_TOKEN) {
-    return handleCORS(req, NextResponse.json({ error: 'Replicate API token not configured' }, { status: 500 }))
-  }
-
-  // Check if user has enough credits
-  const creditsResponse = await fetch(`${req.nextUrl.origin}/api/credits`, {
-    headers: {
-      Authorization: req.headers.get('Authorization') || '',
-    },
-  })
-  const { credits } = await creditsResponse.json()
-
-  if (credits < 1) {
-    return handleCORS(req, NextResponse.json({ error: 'Not enough credits' }, { status: 400 }))
-  }
-
-  const { prompt, style, environment } = await req.json()
-
   try {
-    const fullPrompt = `A highly detailed, professional photograph of a ${prompt}, ${style} style, in a ${environment}, 8k resolution, realistic lighting, intricate details`
+    const { userId } = auth()
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    if (!REPLICATE_API_TOKEN) {
+      return NextResponse.json({ error: 'Replicate API token not configured' }, { status: 500 })
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { credits: true },
+    })
+
+    if (!user || user.credits < 1) {
+      return NextResponse.json({ error: 'Not enough credits' }, { status: 400 })
+    }
+
+    const { type, style, environment, details } = await req.json()
+
+    if (!type || !style || !environment) {
+      return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+    }
+
+    console.log('Generating car with data:', { type, style, environment, details })
+
+    const fullPrompt = `A highly detailed, professional photograph of a ${type} car, ${style} style, in a ${environment} environment, with these additional details: ${details}. 8k resolution, realistic lighting, intricate details`
     const negativePrompt = "low quality, blurry, distorted, unrealistic, cartoon, anime, sketch, drawing"
 
     const response = await fetch("https://api.replicate.com/v1/predictions", {
@@ -72,39 +76,49 @@ export async function POST(req: NextRequest) {
       }),
     })
 
-    if (response.status !== 201) {
+    if (!response.ok) {
       const error = await response.json()
-      return handleCORS(req, NextResponse.json({ error: error.detail }, { status: 500 }))
+      console.error('Replicate API error:', error)
+      return NextResponse.json({ error: 'Image generation failed' }, { status: 500 })
     }
 
     const prediction = await response.json()
     const result = await pollForResult(prediction.id)
 
-    // Generate a title and description
-    const title = `${style.charAt(0).toUpperCase() + style.slice(1)} ${prompt} in ${environment}`
-    const description = `This ${style} style car is a futuristic marvel designed for the ${environment}. It showcases innovative features and a sleek design that pushes the boundaries of automotive engineering.`
-
-    // Deduct a credit
-    await fetch(`${req.nextUrl.origin}/api/credits`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: req.headers.get('Authorization') || '',
-      },
-      body: JSON.stringify({ credits: -1 }),
+    const uploadResponse = await cloudinary.uploader.upload(result.output[0], {
+      folder: 'ai-cars',
     })
 
-    return handleCORS(req, NextResponse.json({ 
-      imageUrl: result.output[0],
-      title: title,
-      description: description
-    }))
-  } catch (error) {
-    console.error('Error generating image:', error)
-    return handleCORS(req, NextResponse.json({ error: 'Failed to generate image' }, { status: 500 }))
-  }
-}
+    const newCar = await prisma.car.create({
+      data: {
+        imageUrl: uploadResponse.secure_url,
+        title: `${style} ${type} in ${environment}`,
+        description: `A ${style} ${type} car designed for a ${environment} environment. ${details}`,
+        type,
+        style,
+        environment,
+        userId,
+        featured: false, // Set featured to false by default
+      },
+    })
 
-export async function OPTIONS(req: NextRequest) {
-  return handleCORS(req, new NextResponse(null, { status: 204 }))
+    // Deduct credits after successful generation
+    await prisma.user.update({
+      where: { id: userId },
+      data: { credits: { decrement: 1 } },
+    })
+
+    return NextResponse.json({ 
+      id: newCar.id,
+      imageUrl: newCar.imageUrl,
+      title: newCar.title,
+      description: newCar.description,
+      type: newCar.type,
+      style: newCar.style,
+      environment: newCar.environment,
+    })
+  } catch (error) {
+    console.error('Error generating car:', error)
+    return NextResponse.json({ error: 'Failed to generate car', details: (error as Error).message }, { status: 500 })
+  }
 }
