@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
-import { ThumbsUp, ThumbsDown, RefreshCw, Trophy, X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, RefreshCw, Trophy, X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Input } from "@/components/ui/input"
 import { useUser, SignInButton, UserButton, SignUpButton } from "@clerk/nextjs"
 import Link from 'next/link'
@@ -54,8 +54,7 @@ export default function FutureCarsGallery() {
     try {
       const response = await fetch(`/api/cars?page=${page}&limit=9`)
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to fetch cars')
+        throw new Error('Failed to fetch cars')
       }
       const data = await response.json()
       setCars(data.cars)
@@ -63,7 +62,7 @@ export default function FutureCarsGallery() {
       setCurrentPage(data.currentPage)
     } catch (error) {
       console.error('Error fetching cars:', error)
-      toast.error(`Failed to load cars: ${(error as Error).message}`)
+      toast.error('Failed to load cars. Please try again later.')
     } finally {
       setIsLoading(false)
     }
@@ -178,25 +177,6 @@ export default function FutureCarsGallery() {
   const handlePageChange = (newPage: number) => {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage)
-    }
-  }
-
-  const handleDownload = async (imageUrl: string, title: string) => {
-    try {
-      const response = await fetch(imageUrl)
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = `${title.replace(/\s+/g, '_')}.png`
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-      toast.success('Image downloaded successfully!')
-    } catch (error) {
-      console.error('Error downloading image:', error)
-      toast.error('Failed to download image. Please try again.')
     }
   }
 
@@ -339,19 +319,13 @@ export default function FutureCarsGallery() {
             </div>
             <div className="p-4">
               <img src={selectedCar.imageUrl} alt={selectedCar.title} className="w-full h-auto rounded-lg" />
-              <div className="mt-4 flex justify-between items-center">
-                <p className="text-lg">Votes: {selectedCar.votes}</p>
-                <Button onClick={() => handleDownload(selectedCar.imageUrl, selectedCar.title)}>
-                  <Download className="w-4 h-4 mr-2 bg-black" />
-                  Download
-                </Button>
-              </div>
+              <p className="mt-4 text-lg">Votes: {selectedCar.votes}</p>
               <p className="mt-2 text-gray-600">{selectedCar.description}</p>
               <p className="mt-2 text-sm text-gray-500">Style: {selectedCar.style}</p>
               <p className="mt-1 text-sm text-gray-500">Environment: {selectedCar.environment}</p>
               <p className="mt-1 text-sm text-gray-500">Created by: {selectedCar.userDisplayName}</p>
             </div>
-            <div className="sticky bottom-0 flex justify-end p-4 border-t bg-black">
+            <div className="sticky bottom-0 flex justify-end p-4 border-t bg-white">
               <Button variant="outline" onClick={closeModal}>Close</Button>
             </div>
           </div>
