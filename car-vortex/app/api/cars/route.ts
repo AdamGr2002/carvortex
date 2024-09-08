@@ -8,45 +8,43 @@ import { prisma } from '@/lib/prisma'
 export async function GET(req: NextRequest) {
   try {
     const { searchParams } = new URL(req.url)
-    const period = searchParams.get('period')
+    const page = parseInt(searchParams.get('page') || '1', 10)
+    const limit = parseInt(searchParams.get('limit') || '9', 10)
+    const skip = (page - 1) * limit
 
-    let query: any = {
-      orderBy: {
-        votes: 'desc',
-      },
-    }
-
-    if (period) {
-      const now = new Date()
-      const periodStart = new Date(now)
-
-      switch (period) {
-        case '24h':
-          periodStart.setHours(now.getHours() - 24)
-          break
-        case '7d':
-          periodStart.setDate(now.getDate() - 7)
-          break
-        case '30d':
-          periodStart.setDate(now.getDate() - 30)
-          break
-        // 'all' or any other value will return all cars
-      }
-
-      if (period !== 'all') {
-        query.where = {
-          createdAt: {
-            gte: periodStart,
+    const [cars, totalCount] = await Promise.all([
+      prisma.car.findMany({
+        orderBy: {
+          createdAt: 'desc',
+        },
+        skip,
+        take: limit,
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+            },
           },
-        }
-      }
-    }
+        },
+      }),
+      prisma.car.count(),
+    ])
 
-    const cars = await prisma.car.findMany(query)
-    return handleCORS(req, NextResponse.json(cars))
+    const carsWithDisplayName = cars.map(car => ({
+      ...car,
+      userDisplayName: car.user.email.split('@')[0],
+      user: undefined,
+    }))
+
+    return NextResponse.json({
+      cars: carsWithDisplayName,
+      totalPages: Math.ceil(totalCount / limit),
+      currentPage: page,
+    })
   } catch (error) {
-    console.error('Error in GET /api/cars:', error)
-    return handleCORS(req, NextResponse.json({ error: 'Internal Server Error' }, { status: 500 }))
+    console.error('Error fetching cars:', error)
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
 

@@ -4,14 +4,14 @@
 import { useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
-import { ThumbsUp, ThumbsDown, RefreshCw, Trophy, X, Download } from 'lucide-react'
+import { ThumbsUp, ThumbsDown, RefreshCw, Trophy, X, ChevronLeft, ChevronRight, Download } from 'lucide-react'
 import { Input } from "@/components/ui/input"
 import { useUser, SignInButton, UserButton, SignUpButton } from "@clerk/nextjs"
 import Link from 'next/link'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { toast, ToastContainer } from 'react-toastify'
 import 'react-toastify/dist/ReactToastify.css'
-export const dynamic = 'force-dynamic'
+
 interface Car {
   id: string
   imageUrl: string
@@ -20,6 +20,7 @@ interface Car {
   description: string
   style: string
   environment: string
+  userDisplayName: string
 }
 
 interface User {
@@ -31,38 +32,39 @@ interface User {
 export default function FutureCarsGallery() {
   const [cars, setCars] = useState<Car[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
   const [prompt, setPrompt] = useState("A futuristic concept car")
   const [style, setStyle] = useState("realistic")
   const [environment, setEnvironment] = useState("city street")
   const { isSignedIn, user } = useUser()
   const [selectedCar, setSelectedCar] = useState<Car | null>(null)
   const [userData, setUserData] = useState<User | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const [totalPages, setTotalPages] = useState(1)
 
   useEffect(() => {
-    fetchCars()
+    fetchCars(currentPage)
     if (isSignedIn) {
       fetchUserData()
     }
-  }, [isSignedIn])
+  }, [isSignedIn, currentPage])
 
-  const fetchCars = async () => {
+  const fetchCars = async (page: number) => {
+    setIsLoading(true)
     try {
-      const response = await fetch('/api/cars')
+      const response = await fetch(`/api/cars?page=${page}&limit=9`)
       if (!response.ok) {
         throw new Error('Failed to fetch cars')
       }
       const data = await response.json()
-      if (Array.isArray(data)) {
-        setCars(data)
-      } else {
-        console.error('Fetched data is not an array:', data)
-        setCars([])
-      }
+      setCars(data.cars)
+      setTotalPages(data.totalPages)
+      setCurrentPage(data.currentPage)
     } catch (error) {
       console.error('Error fetching cars:', error)
-      setError('Failed to load cars. Please try again later.')
-      setCars([])
+      toast.error('Failed to load cars. Please try again later.')
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -76,7 +78,7 @@ export default function FutureCarsGallery() {
       setUserData(data)
     } catch (error) {
       console.error('Error fetching user data:', error)
-      setError('Failed to load user data. Please try again later.')
+      toast.error('Failed to load user data. Please try again later.')
     }
   }
 
@@ -115,7 +117,6 @@ export default function FutureCarsGallery() {
     }
 
     setIsGenerating(true)
-    setError(null)
     try {
       const response = await fetch('/api/generate-car', {
         method: 'POST',
@@ -147,25 +148,21 @@ export default function FutureCarsGallery() {
         body: JSON.stringify(newCar),
       })
 
-      if (!carResponse.ok) {
-        throw new Error('Failed to save new car')
+      if (carResponse.ok) {
+        const savedCar = await carResponse.json()
+        setCars([savedCar, ...cars.slice(0, 8)])
+        await fetch('/api/users', {
+          method: 'PATCH',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ credits: -1 }),
+        })
+        fetchUserData()
+        toast.success('New car generated successfully!')
       }
-
-      const savedCar = await carResponse.json()
-      setCars(prevCars => [...prevCars, savedCar])
-
-      await fetch('/api/users', {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ credits: -1 }),
-      })
-      fetchUserData()
-      toast.success('New car generated successfully!')
     } catch (error) {
       console.error('Error generating car:', error)
-      setError('Failed to generate car. Please try again.')
       toast.error('Failed to generate car. Please try again.')
     } finally {
       setIsGenerating(false)
@@ -174,6 +171,12 @@ export default function FutureCarsGallery() {
 
   const closeModal = () => {
     setSelectedCar(null)
+  }
+
+  const handlePageChange = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setCurrentPage(newPage)
+    }
   }
 
   const handleDownload = async (imageUrl: string, title: string) => {
@@ -210,7 +213,7 @@ export default function FutureCarsGallery() {
           {isSignedIn ? (
             <>
               <div className="flex items-center gap-2">
-                <span>Credits: {userData?.credits ?? 'Loading...'}</span>
+                <span>Credits: {userData?.credits ?? 0}</span>
               </div>
               <UserButton afterSignOutUrl="/" />
             </>
@@ -226,80 +229,102 @@ export default function FutureCarsGallery() {
           )}
         </div>
       </div>
-      <div className="mb-4 flex flex-col gap-2">
-        <Input
-          type="text"
-          value={prompt}
-          onChange={(e) => setPrompt(e.target.value)}
-          placeholder="Enter a prompt for the AI car"
-          className="flex-grow"
-        />
-        <div className="flex flex-wrap gap-2">
-          <Select value={style} onValueChange={setStyle}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Select style" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="realistic">Realistic</SelectItem>
-              <SelectItem value="cartoon">Cartoon</SelectItem>
-              <SelectItem value="cyberpunk">Cyberpunk</SelectItem>
-              <SelectItem value="retro">Retro</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={environment} onValueChange={setEnvironment}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Select environment" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="city street">City Street</SelectItem>
-              <SelectItem value="highway">Highway</SelectItem>
-              <SelectItem value="futuristic cityscape">Futuristic Cityscape</SelectItem>
-              <SelectItem value="nature">Nature</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button onClick={handleGenerateNew} disabled={isGenerating || !userData || userData.credits < 1} className="w-full sm:w-auto">
-            {isGenerating ? (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
-                Generating...
-              </>
-            ) : (
-              <>
-                <RefreshCw className="w-4 h-4 mr-2" />
-                Generate New Car (1 Credit)
-              </>
-            )}
-          </Button>
-        </div>
-      </div>
-      {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
-          <strong className="font-bold">Error: </strong>
-          <span className="block sm:inline">{error}</span>
+      {isSignedIn && (
+        <div className="mb-4 flex flex-col gap-2">
+          <Input
+            type="text"
+            value={prompt}
+            onChange={(e) => setPrompt(e.target.value)}
+            placeholder="Enter a prompt for the AI car"
+            className="flex-grow"
+          />
+          <div className="flex flex-wrap gap-2">
+            <Select value={style} onValueChange={setStyle}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Select style" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="realistic">Realistic</SelectItem>
+                <SelectItem value="cartoon">Cartoon</SelectItem>
+                <SelectItem value="cyberpunk">Cyberpunk</SelectItem>
+                <SelectItem value="retro">Retro</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={environment} onValueChange={setEnvironment}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Select environment" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="city street">City Street</SelectItem>
+                <SelectItem value="highway">Highway</SelectItem>
+                <SelectItem value="futuristic cityscape">Futuristic Cityscape</SelectItem>
+                <SelectItem value="nature">Nature</SelectItem>
+              </SelectContent>
+            </Select>
+            <Button onClick={handleGenerateNew} disabled={isGenerating || !userData || userData.credits < 1} className="w-full sm:w-auto">
+              {isGenerating ? (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Generate New Car (1 Credit)
+                </>
+              )}
+            </Button>
+          </div>
         </div>
       )}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {cars.map((car) => (
-          <Card key={car.id} className="overflow-hidden cursor-pointer" onClick={() => setSelectedCar(car)}>
-            <CardContent className="p-0">
-              <img src={car.imageUrl} alt={car.title} className="w-full h-48 object-cover" />
-            </CardContent>
-            <CardFooter className="flex justify-between items-center p-4">
-              <div>
-                <h2 className="text-lg font-semibold">{car.title}</h2>
-                <p className="text-sm text-gray-500">Votes: {car.votes}</p>
-              </div>
-              <div className="flex space-x-2">
-                <Button size="sm" onClick={(e) => { e.stopPropagation(); handleVote(car.id, 'up'); }} disabled={!isSignedIn}>
-                  <ThumbsUp className="w-4 h-4" />
-                </Button>
-                <Button size="sm" onClick={(e) => { e.stopPropagation(); handleVote(car.id, 'down'); }} disabled={!isSignedIn}>
-                  <ThumbsDown className="w-4 h-4" />
-                </Button>
-              </div>
-            </CardFooter>
-          </Card>
-        ))}
+      {isLoading ? (
+        <div className="flex justify-center items-center h-64">
+          <RefreshCw className="w-8 h-8 animate-spin" />
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {cars.map((car) => (
+            <Card key={car.id} className="overflow-hidden cursor-pointer" onClick={() => setSelectedCar(car)}>
+              <CardContent className="p-0">
+                <img src={car.imageUrl} alt={car.title} className="w-full h-48 object-cover" />
+              </CardContent>
+              <CardFooter className="flex justify-between items-center p-4">
+                <div>
+                  <h2 className="text-lg font-semibold">{car.title}</h2>
+                  <p className="text-sm text-gray-500">Votes: {car.votes}</p>
+                  <p className="text-xs text-gray-400">Created by: {car.userDisplayName}</p>
+                </div>
+                <div className="flex space-x-2">
+                  <Button size="sm" onClick={(e) => { e.stopPropagation(); handleVote(car.id, 'up'); }} disabled={!isSignedIn}>
+                    <ThumbsUp className="w-4 h-4" />
+                  </Button>
+                  <Button size="sm" onClick={(e) => { e.stopPropagation(); handleVote(car.id, 'down'); }} disabled={!isSignedIn}>
+                    <ThumbsDown className="w-4 h-4" />
+                  </Button>
+                </div>
+              </CardFooter>
+            </Card>
+          ))}
+        </div>
+      )}
+      <div className="mt-8 flex justify-center items-center space-x-4">
+        <Button
+          onClick={() => handlePageChange(currentPage - 1)}
+          disabled={currentPage === 1}
+          variant="outline"
+        >
+          <ChevronLeft className="w-4 h-4 mr-2" />
+          Previous
+        </Button>
+        <span>Page {currentPage} of {totalPages}</span>
+        <Button
+          onClick={() => handlePageChange(currentPage + 1)}
+          disabled={currentPage === totalPages}
+          variant="outline"
+        >
+          Next
+          <ChevronRight className="w-4 h-4 ml-2" />
+        </Button>
       </div>
       {selectedCar && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50 overflow-y-auto">
@@ -312,17 +337,20 @@ export default function FutureCarsGallery() {
             </div>
             <div className="p-4">
               <img src={selectedCar.imageUrl} alt={selectedCar.title} className="w-full h-auto rounded-lg" />
-              <p className="mt-4 text-lg text-red-500">Votes: {selectedCar.votes}</p>
-              <p className="mt-2 text-black">{selectedCar.description}</p>
-              <p className="mt-2 text-sm text-black">Style: {selectedCar.style}</p>
-              <p className="mt-1 text-sm text-black">Environment: {selectedCar.environment}</p>
+              <div className="mt-4 flex justify-between items-center">
+                <p className="text-lg">Votes: {selectedCar.votes}</p>
+                <Button onClick={() => handleDownload(selectedCar.imageUrl, selectedCar.title)}>
+                  <Download className="w-4 h-4 mr-2 bg-black" />
+                  Download
+                </Button>
+              </div>
+              <p className="mt-2 text-gray-600">{selectedCar.description}</p>
+              <p className="mt-2 text-sm text-gray-500">Style: {selectedCar.style}</p>
+              <p className="mt-1 text-sm text-gray-500">Environment: {selectedCar.environment}</p>
+              <p className="mt-1 text-sm text-gray-500">Created by: {selectedCar.userDisplayName}</p>
             </div>
-            <div className="sticky bottom-0 flex justify-end p-4 border-t bg-white">
-              <Button variant="outline" onClick={() => handleDownload(selectedCar.imageUrl, selectedCar.title)} className="mr-2 bg-black">
-                <Download className="w-4 h-4 mr-2 " />
-                Download Image
-              </Button>
-              <Button variant="outline" onClick={closeModal} className='bg-black'>Close</Button>
+            <div className="sticky bottom-0 flex justify-end p-4 border-t bg-black">
+              <Button variant="outline" onClick={closeModal}>Close</Button>
             </div>
           </div>
         </div>
