@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-unused-vars */
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { ThumbsUp, ThumbsDown, RefreshCw, Trophy, X, ChevronLeft, ChevronRight } from 'lucide-react'
@@ -33,6 +33,7 @@ export default function FutureCarsGallery() {
   const [cars, setCars] = useState<Car[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [prompt, setPrompt] = useState("A futuristic concept car")
   const [style, setStyle] = useState("realistic")
   const [environment, setEnvironment] = useState("city street")
@@ -42,19 +43,13 @@ export default function FutureCarsGallery() {
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
 
-  useEffect(() => {
-    fetchCars(currentPage)
-    if (isSignedIn) {
-      fetchUserData()
-    }
-  }, [isSignedIn, currentPage])
-
-  const fetchCars = async (page: number) => {
+  const fetchCars = useCallback(async (page: number) => {
     setIsLoading(true)
+    setError(null)
     try {
       const response = await fetch(`/api/cars?page=${page}&limit=9`)
       if (!response.ok) {
-        throw new Error('Failed to fetch cars')
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
       const data = await response.json()
       setCars(data.cars)
@@ -62,26 +57,42 @@ export default function FutureCarsGallery() {
       setCurrentPage(data.currentPage)
     } catch (error) {
       console.error('Error fetching cars:', error)
+      setError('Failed to load cars. Please try again later.')
       toast.error('Failed to load cars. Please try again later.')
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [])
 
-  const fetchUserData = async () => {
+  const fetchUserData = useCallback(async () => {
     try {
       const response = await fetch('/api/users')
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to fetch user data')
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
       const data = await response.json()
       setUserData(data)
     } catch (error) {
       console.error('Error fetching user data:', error)
-      toast.error(`Failed to load user data: ${(error as Error).message}`)
+      toast.error('Failed to load user data. Please try again.')
     }
-  }
+  }, [])
+
+  useEffect(() => {
+    let isMounted = true
+    const fetchData = async () => {
+      if (isMounted) {
+        await fetchCars(currentPage)
+        if (isSignedIn) {
+          await fetchUserData()
+        }
+      }
+    }
+    fetchData()
+    return () => {
+      isMounted = false
+    }
+  }, [isSignedIn, currentPage, fetchCars, fetchUserData])
 
   const handleVote = async (id: string, voteType: 'up' | 'down') => {
     if (!isSignedIn) {
@@ -99,7 +110,7 @@ export default function FutureCarsGallery() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to vote')
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
       const updatedCar = await response.json()
@@ -128,7 +139,7 @@ export default function FutureCarsGallery() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to generate image')
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
 
       const data = await response.json()
@@ -149,19 +160,21 @@ export default function FutureCarsGallery() {
         body: JSON.stringify(newCar),
       })
 
-      if (carResponse.ok) {
-        const savedCar = await carResponse.json()
-        setCars([savedCar, ...cars.slice(0, 8)])
-        await fetch('/api/users', {
-          method: 'PATCH',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ credits: -1 }),
-        })
-        fetchUserData()
-        toast.success('New car generated successfully!')
+      if (!carResponse.ok) {
+        throw new Error(`HTTP error! status: ${carResponse.status}`)
       }
+
+      const savedCar = await carResponse.json()
+      setCars([savedCar, ...cars.slice(0, 8)])
+      await fetch('/api/users', {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ credits: -1 }),
+      })
+      fetchUserData()
+      toast.success('New car generated successfully!')
     } catch (error) {
       console.error('Error generating car:', error)
       toast.error('Failed to generate car. Please try again.')
@@ -178,6 +191,18 @@ export default function FutureCarsGallery() {
     if (newPage >= 1 && newPage <= totalPages) {
       setCurrentPage(newPage)
     }
+  }
+
+  if (error) {
+    return (
+      <div className="container mx-auto p-4">
+        <h1 className="text-3xl font-bold mb-4">Error</h1>
+        <p className="text-red-500">{error}</p>
+        <Button onClick={() => fetchCars(currentPage)} className="mt-4">
+          Retry
+        </Button>
+      </div>
+    )
   }
 
   return (
