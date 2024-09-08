@@ -4,10 +4,13 @@ import { prisma } from '@/lib/prisma'
 
 export async function GET(req: NextRequest) {
   try {
+    console.log('Fetching cars...')
     const { searchParams } = new URL(req.url)
     const page = parseInt(searchParams.get('page') || '1', 10)
     const limit = parseInt(searchParams.get('limit') || '9', 10)
     const skip = (page - 1) * limit
+
+    console.log(`Page: ${page}, Limit: ${limit}, Skip: ${skip}`)
 
     const [cars, totalCount] = await Promise.all([
       prisma.car.findMany({
@@ -27,6 +30,8 @@ export async function GET(req: NextRequest) {
       }),
       prisma.car.count(),
     ])
+
+    console.log(`Fetched ${cars.length} cars, Total count: ${totalCount}`)
 
     const carsWithDisplayName = cars.map(car => ({
       ...car,
@@ -48,7 +53,7 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { imageUrl, title, description, style, environment } = body
+    const { imageUrl, title, description, style, environment, userId } = body
 
     const car = await prisma.car.create({
       data: {
@@ -57,7 +62,7 @@ export async function POST(req: NextRequest) {
         description,
         style,
         environment,
-        userId: 'user_id_placeholder', // Replace with actual user ID from authentication
+        userId,
       },
     })
 
