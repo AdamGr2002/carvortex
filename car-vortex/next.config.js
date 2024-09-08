@@ -3,7 +3,11 @@ const nextConfig = {
   reactStrictMode: true,
   swcMinify: true,
   experimental: {
-    appDir: true
+    appDir: true,
+    serverComponentsExternalPackages: ['@prisma/client', 'prisma'],
+  },
+  env: {
+    DATABASE_URL: process.env.DATABASE_URL,
   },
   webpack: (config, { isServer }) => {
     if (isServer) {
