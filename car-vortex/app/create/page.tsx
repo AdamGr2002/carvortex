@@ -57,6 +57,7 @@ export default function CreateCar() {
       }
 
       const data = await response.json()
+      toast.success('Car generation started')
       pollCarStatus(data.id)
     } catch (error) {
       console.error('Error generating car:', error)
@@ -81,6 +82,7 @@ export default function CreateCar() {
         setGeneratingCar(false)
       } else {
         // Still pending, poll again after a delay
+        toast.loading('Car generation in progress...', { duration: 5000 })
         setTimeout(() => pollCarStatus(id), 5000) // Poll every 5 seconds
       }
     } catch (error) {
