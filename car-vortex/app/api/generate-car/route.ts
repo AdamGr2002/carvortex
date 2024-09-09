@@ -12,7 +12,7 @@ if (!CLOUDINARY_URL) {
   console.error('CLOUDINARY_URL is not set')
 }
 
-export async function pollForResult(id: string): Promise<any> {
+async function pollForResult(id: string): Promise<any> {
   const response = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
     headers: {
       Authorization: `Token ${REPLICATE_API_TOKEN}`,
@@ -30,7 +30,7 @@ export async function pollForResult(id: string): Promise<any> {
   }
 }
 
-export async function uploadToCloudinary(imageUrl: string) {
+async function uploadToCloudinary(imageUrl: string) {
   if (!CLOUDINARY_URL) {
     throw new Error('CLOUDINARY_URL is not set')
   }
@@ -95,7 +95,6 @@ export async function POST(req: NextRequest) {
         type,
         style,
         environment,
-        replicateId: '',
         userId,
         status: 'PENDING',
         imageUrl: '', // Add the imageUrl property here
@@ -138,6 +137,12 @@ export async function POST(req: NextRequest) {
     }
 
     const prediction = await response.json()
+
+    // Update the car with the Replicate prediction ID
+    await prisma.car.update({
+      where: { id: pendingCar.id },
+      data: { replicateId: prediction.id },
+    })
 
     // Return the pending car ID immediately
     return NextResponse.json({ 
