@@ -97,7 +97,7 @@ export async function POST(req: NextRequest) {
         environment,
         userId,
         status: 'PENDING',
-        imageUrl: '', // Add the imageUrl property here
+        imageUrl: '', // Initialize with an empty string
       },
     })
 
@@ -138,17 +138,28 @@ export async function POST(req: NextRequest) {
 
     const prediction = await response.json()
 
-    // Update the car with the Replicate prediction ID
+    // Poll for the result
+    const result = await pollForResult(prediction.id)
+
+    // Upload the generated image to Cloudinary
+    const cloudinaryUrl = await uploadToCloudinary(result.output[0])
+
+    // Update the car with the Replicate prediction ID and Cloudinary URL
     await prisma.car.update({
       where: { id: pendingCar.id },
-      data: { replicateId: prediction.id },
+      data: { 
+        replicateId: prediction.id,
+        imageUrl: cloudinaryUrl,
+        status: 'COMPLETED'
+      },
     })
 
-    // Return the pending car ID immediately
+    // Return the completed car data
     return NextResponse.json({ 
       id: pendingCar.id,
-      status: 'PENDING',
-      message: 'Car generation started',
+      status: 'COMPLETED',
+      message: 'Car generation completed',
+      imageUrl: cloudinaryUrl
     })
 
   } catch (error) {
