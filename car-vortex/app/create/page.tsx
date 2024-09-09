@@ -52,14 +52,15 @@ export default function CreateCar() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to initiate car generation')
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to initiate car generation')
       }
 
       const data = await response.json()
       pollCarStatus(data.id)
     } catch (error) {
       console.error('Error generating car:', error)
-      toast.error('Failed to generate car')
+      toast.error(error instanceof Error ? error.message : 'Failed to generate car')
       setGeneratingCar(false)
     }
   }
@@ -68,7 +69,8 @@ export default function CreateCar() {
     try {
       const response = await fetch(`/api/car-status/${id}`)
       if (!response.ok) {
-        throw new Error('Failed to fetch car status')
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to fetch car status')
       }
       const data = await response.json()
       if (data.status === 'COMPLETED') {
@@ -78,11 +80,12 @@ export default function CreateCar() {
         toast.error('Car generation failed')
         setGeneratingCar(false)
       } else {
+        // Still pending, poll again after a delay
         setTimeout(() => pollCarStatus(id), 5000) // Poll every 5 seconds
       }
     } catch (error) {
       console.error('Error polling car status:', error)
-      toast.error('Failed to check car status')
+      toast.error(error instanceof Error ? error.message : 'Failed to check car status')
       setGeneratingCar(false)
     }
   }

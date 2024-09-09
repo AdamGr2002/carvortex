@@ -7,10 +7,6 @@ import { prisma } from '@/lib/prisma'
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 const CLOUDINARY_URL = process.env.CLOUDINARY_URL
 
-if (!CLOUDINARY_URL) {
-  console.error('CLOUDINARY_URL is not set')
-}
-
 async function pollForResult(id: string): Promise<any> {
   const response = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
     headers: {
@@ -24,8 +20,7 @@ async function pollForResult(id: string): Promise<any> {
   } else if (result.status === 'failed') {
     throw new Error('Image generation failed')
   } else {
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    return pollForResult(id)
+    return null // Still in progress
   }
 }
 
@@ -38,24 +33,17 @@ async function uploadToCloudinary(imageUrl: string) {
   formData.append('file', imageUrl)
   formData.append('upload_preset', 'ml_default')
 
-  try {
-    const response = await fetch(CLOUDINARY_URL, {
-      method: 'POST',
-      body: formData,
-    })
+  const response = await fetch(CLOUDINARY_URL, {
+    method: 'POST',
+    body: formData,
+  })
 
-    if (!response.ok) {
-      const errorData = await response.text()
-      console.error('Cloudinary upload failed:', errorData)
-      throw new Error(`Failed to upload image to Cloudinary: ${response.statusText}`)
-    }
-
-    const result = await response.json()
-    return result.secure_url
-  } catch (error) {
-    console.error('Error uploading to Cloudinary:', error)
-    throw new Error('Failed to upload image to Cloudinary')
+  if (!response.ok) {
+    throw new Error(`Failed to upload image to Cloudinary: ${response.statusText}`)
   }
+
+  const result = await response.json()
+  return result.secure_url
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -78,11 +66,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
 
     if (car.status === 'PENDING' && car.replicateId) {
-      // Continue the car generation process
-      try {
-        const result = await pollForResult(car.replicateId)
+      // Check the status of the Replicate job
+      const result = await pollForResult(car.replicateId)
+      
+      if (result) {
+        // Job is complete, upload to Cloudinary
         const cloudinaryUrl = await uploadToCloudinary(result.output[0])
 
+        // Update the car with the final image URL
         await prisma.car.update({
           where: { id: car.id },
           data: {
@@ -98,16 +89,17 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           title: car.title,
           description: car.description,
         })
-      } catch (error) {
-        console.error('Error completing car generation:', error)
-        await prisma.car.update({
-          where: { id: car.id },
-          data: { status: 'FAILED' },
+      } else {
+        // Job is still in progress
+        return NextResponse.json({
+          id: car.id,
+          status: 'PENDING',
+          message: 'Car generation in progress',
         })
-        return NextResponse.json({ error: 'Car generation failed' }, { status: 500 })
       }
     }
 
+    // If the car is already completed or failed, just return its current status
     return NextResponse.json({
       id: car.id,
       status: car.status,
@@ -116,7 +108,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
       description: car.description,
     })
   } catch (error) {
-    console.error('Error fetching car status:', error)
-    return NextResponse.json({ error: 'Failed to fetch car status' }, { status: 500 })
+    console.error('Error checking car status:', error)
+    return NextResponse.json({ error: 'Failed to check car status' }, { status: 500 })
   }
 }

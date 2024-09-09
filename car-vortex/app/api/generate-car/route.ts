@@ -6,58 +6,6 @@ import { prisma } from '@/lib/prisma'
 import { Prisma } from '@prisma/client'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
-const CLOUDINARY_URL = process.env.CLOUDINARY_URL
-
-if (!CLOUDINARY_URL) {
-  console.error('CLOUDINARY_URL is not set')
-}
-
-async function pollForResult(id: string): Promise<any> {
-  const response = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
-    headers: {
-      Authorization: `Token ${REPLICATE_API_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-  })
-  const result = await response.json()
-  if (result.status === 'succeeded') {
-    return result
-  } else if (result.status === 'failed') {
-    throw new Error('Image generation failed')
-  } else {
-    await new Promise(resolve => setTimeout(resolve, 1000))
-    return pollForResult(id)
-  }
-}
-
-async function uploadToCloudinary(imageUrl: string) {
-  if (!CLOUDINARY_URL) {
-    throw new Error('CLOUDINARY_URL is not set')
-  }
-
-  const formData = new FormData()
-  formData.append('file', imageUrl)
-  formData.append('upload_preset', 'ml_default')
-
-  try {
-    const response = await fetch(CLOUDINARY_URL, {
-      method: 'POST',
-      body: formData,
-    })
-
-    if (!response.ok) {
-      const errorData = await response.text()
-      console.error('Cloudinary upload failed:', errorData)
-      throw new Error(`Failed to upload image to Cloudinary: ${response.statusText}`)
-    }
-
-    const result = await response.json()
-    return result.secure_url
-  } catch (error) {
-    console.error('Error uploading to Cloudinary:', error)
-    throw new Error('Failed to upload image to Cloudinary')
-  }
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -97,7 +45,7 @@ export async function POST(req: NextRequest) {
         environment,
         userId,
         status: 'PENDING',
-        imageUrl: '', // Initialize with an empty string
+        imageUrl: '',
       },
     })
 
@@ -138,28 +86,17 @@ export async function POST(req: NextRequest) {
 
     const prediction = await response.json()
 
-    // Poll for the result
-    const result = await pollForResult(prediction.id)
-
-    // Upload the generated image to Cloudinary
-    const cloudinaryUrl = await uploadToCloudinary(result.output[0])
-
-    // Update the car with the Replicate prediction ID and Cloudinary URL
+    // Update the car with the Replicate prediction ID
     await prisma.car.update({
       where: { id: pendingCar.id },
-      data: { 
-        replicateId: prediction.id,
-        imageUrl: cloudinaryUrl,
-        status: 'COMPLETED'
-      },
+      data: { replicateId: prediction.id },
     })
 
-    // Return the completed car data
+    // Return the pending car ID immediately
     return NextResponse.json({ 
       id: pendingCar.id,
-      status: 'COMPLETED',
-      message: 'Car generation completed',
-      imageUrl: cloudinaryUrl
+      status: 'PENDING',
+      message: 'Car generation started',
     })
 
   } catch (error) {
