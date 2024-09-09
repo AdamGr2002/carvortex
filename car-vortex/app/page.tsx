@@ -25,10 +25,11 @@ export default function Home() {
   const [isLoadingCredits, setIsLoadingCredits] = useState(false)
   const [isLoadingCars, setIsLoadingCars] = useState(false)
   const [nextCursor, setNextCursor] = useState<string | null>(null)
+  const [hasMore, setHasMore] = useState(true)
   const { isSignedIn, user } = useUser()
 
   const fetchFeaturedCars = useCallback(async () => {
-    if (isLoadingCars) return;
+    if (isLoadingCars || !hasMore) return;
     setIsLoadingCars(true);
     try {
       const response = await fetch(`/api/featured-cars${nextCursor ? `?cursor=${nextCursor}` : ''}`)
@@ -37,23 +38,30 @@ export default function Home() {
       }
       const data = await response.json()
       if (data && Array.isArray(data.cars)) {
-        setFeaturedCars(prev => [...prev, ...data.cars])
-        setNextCursor(data.nextCursor)
+        if (data.cars.length === 0) {
+          setHasMore(false)
+        } else {
+          setFeaturedCars(prev => [...prev, ...data.cars])
+          setNextCursor(data.nextCursor)
+          setHasMore(!!data.nextCursor)
+        }
       } else {
         console.error('Unexpected data structure:', data)
         toast.error('Failed to load featured cars: Unexpected data structure')
+        setHasMore(false)
       }
     } catch (error) {
       console.error('Error fetching featured cars:', error)
       toast.error('Failed to load featured cars')
+      setHasMore(false)
     } finally {
       setIsLoadingCars(false)
     }
-  }, [nextCursor, isLoadingCars])
+  }, [nextCursor, isLoadingCars, hasMore])
 
   useEffect(() => {
     fetchFeaturedCars()
-  }, [fetchFeaturedCars])
+  }, [])
 
   useEffect(() => {
     const fetchCredits = async () => {
@@ -182,8 +190,13 @@ export default function Home() {
           <InfiniteScroll
             dataLength={featuredCars.length}
             next={fetchFeaturedCars}
-            hasMore={!!nextCursor}
+            hasMore={hasMore}
             loader={<h4>Loading...</h4>}
+            endMessage={
+              <p style={{ textAlign: 'center' }}>
+                <b>You have seen all the featured cars!</b>
+              </p>
+            }
           >
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {featuredCars.map((car, index) => (
