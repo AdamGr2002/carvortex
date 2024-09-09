@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { auth } from '@clerk/nextjs/server'
+import { auth, currentUser } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/prisma'
 
 export async function GET() {
@@ -15,11 +15,19 @@ export async function GET() {
     })
 
     if (!user) {
+      // Get the current user's email from Clerk
+      const clerkUser = await currentUser()
+      if (!clerkUser || !clerkUser.emailAddresses || clerkUser.emailAddresses.length === 0) {
+        return NextResponse.json({ error: 'Unable to retrieve user email' }, { status: 400 })
+      }
+
+      const primaryEmail = clerkUser.emailAddresses[0].emailAddress
+
       // Create a new user record if not found
       const newUser = await prisma.user.create({
         data: {
           id: userId,
-          email: 'example@example.com', // Add a valid email address
+          email: primaryEmail,
           credits: 5, // Start with 5 credits for new users
         },
       })
