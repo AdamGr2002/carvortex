@@ -1,40 +1,44 @@
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
+import { auth } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/prisma'
 
-export async function GET() {
+export async function GET(req: NextRequest) {
+  const { userId } = auth()
+  const { searchParams } = new URL(req.url)
+  const cursor = searchParams.get('cursor')
+  const limit = 9 // Number of cars to fetch per request
+
   try {
-    const featuredCars = await prisma.car.findMany({
-      where: {
-        featured: true
-      },
+    const cars = await prisma.car.findMany({
+      take: limit,
+      skip: cursor ? 1 : 0,
+      cursor: cursor ? { id: cursor } : undefined,
       orderBy: {
-        createdAt: 'desc'
+        votes: 'desc'
       },
-      take: 6,
       include: {
-        user: {
-          select: {
-            name: true,
-            email: true,
-          },
+        _count: {
+          select: { votedBy: true }
         },
-      },
+        votedBy: userId ? {
+          where: { userId: userId }
+        } : undefined
+      }
     })
 
-    if (!featuredCars) {
-      throw new Error('Failed to fetch featured cars from the database')
-    }
-
-    const formattedCars = featuredCars.map(car => ({
+    const formattedCars = cars.map(car => ({
       id: car.id,
       imageUrl: car.imageUrl,
       title: car.title,
-      userDisplayName: car.user?.name || car.user?.email?.split('@')[0] || 'Unknown User',
+      voteCount: car.votes,
+      hasVoted: car.votedBy && car.votedBy.length > 0
     }))
 
-    return NextResponse.json(formattedCars)
+    const nextCursor = cars.length === limit ? cars[cars.length - 1].id : null
+
+    return NextResponse.json({ cars: formattedCars, nextCursor })
   } catch (error) {
     console.error('Error fetching featured cars:', error)
-    return NextResponse.json({ error: 'Failed to fetch featured cars', details: (error as Error).message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to fetch featured cars' }, { status: 500 })
   }
 }

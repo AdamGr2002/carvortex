@@ -44,12 +44,11 @@ model Favorite {
   @@unique([userId, carId])
 }
 model Vote {
-  id        String   @id @default(uuid())
-  createdAt DateTime @default(now())
-  userId    String
-  carId     String
-  user      User     @relation(fields: [userId], references: [id])
-  car       Car      @relation(fields: [carId], references: [id])
+  id     String @id @default(cuid())
+  carId  String
+  userId String
+  car    Car    @relation(fields: [carId], references: [id])
 
-  @@unique([userId, carId])
+  @@unique([carId, userId])
+  User User[]
 }
