@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-var-requires */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 /* eslint-disable @typescript-eslint/no-unused-vars */
 import { NextRequest, NextResponse } from 'next/server'
@@ -47,10 +48,17 @@ async function uploadToCloudinary(imageUrl: string) {
 
     const [, apiKey, apiSecret, cloudName] = cloudinaryUrlParts
 
+    const timestamp = Math.round((new Date()).getTime() / 1000)
+    const signature = await generateSignature(timestamp, apiSecret)
+
     const formData = new FormData()
     formData.append('file', imageUrl)
-    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET)
+    formData.append('timestamp', timestamp.toString())
     formData.append('api_key', apiKey)
+    formData.append('signature', signature)
+    if (CLOUDINARY_UPLOAD_PRESET) {
+      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET)
+    }
 
     const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
 
@@ -62,7 +70,7 @@ async function uploadToCloudinary(imageUrl: string) {
     if (!response.ok) {
       const errorData = await response.text()
       console.error('Cloudinary upload failed:', errorData)
-      throw new Error(`Failed to upload image to Cloudinary: ${response.statusText}`)
+      throw new Error(`Failed to upload image to Cloudinary: ${response.statusText}. Details: ${errorData}`)
     }
 
     const result = await response.json()
@@ -72,6 +80,12 @@ async function uploadToCloudinary(imageUrl: string) {
     console.error('Error uploading to Cloudinary:', error)
     throw error
   }
+}
+
+async function generateSignature(timestamp: number, apiSecret: string) {
+  const crypto = require('crypto')
+  const stringToSign = `timestamp=${timestamp}${apiSecret}`
+  return crypto.createHash('sha256').update(stringToSign).digest('hex')
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -142,6 +156,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     })
   } catch (error) {
     console.error('Error checking car status:', error)
-    return NextResponse.json({ error: 'Failed to check car status', details: (error as any).message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to check car status', details: (error as Error).message }, { status: 500 })
   }
 }
