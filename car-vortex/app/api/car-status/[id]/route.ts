@@ -53,7 +53,6 @@ async function uploadToCloudinary(imageUrl: string) {
     const params = {
       timestamp: timestamp.toString(),
       upload_preset: CLOUDINARY_UPLOAD_PRESET,
-      file: imageUrl
     }
 
     const signature = generateSignature(params, apiSecret)
