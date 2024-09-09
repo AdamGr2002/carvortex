@@ -53,18 +53,28 @@ export default function CreateCar() {
         body: JSON.stringify(carData),
       })
 
+      const responseText = await response.text()
+      console.log('Raw response:', responseText)
+
       if (!response.ok) {
-        const errorData = await response.json()
-        console.error('API error:', errorData)
-        if (errorData.error === 'Not enough credits') {
-          toast.error('You do not have enough credits to generate a car. Please purchase more credits.')
-        } else {
-          throw new Error(errorData.error || 'Failed to generate car')
+        let errorMessage = 'Failed to generate car'
+        try {
+          const errorData = JSON.parse(responseText)
+          errorMessage = errorData.error || errorMessage
+        } catch (parseError) {
+          console.error('Error parsing error response:', parseError)
         }
-        return
+        throw new Error(errorMessage)
       }
 
-      const data = await response.json()
+      let data
+      try {
+        data = JSON.parse(responseText)
+      } catch (parseError) {
+        console.error('Error parsing success response:', parseError)
+        throw new Error('Invalid response from server')
+      }
+
       console.log('Generated car:', data)
       
       router.push(`/results/${data.id}`)

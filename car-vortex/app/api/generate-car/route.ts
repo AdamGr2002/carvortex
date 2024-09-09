@@ -8,6 +8,11 @@ import { Prisma } from '@prisma/client'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 
+export const config = {
+  runtime: 'edge',
+  maxDuration: 300, // Set maximum duration to 5 minutes (300 seconds)
+}
+
 async function pollForResult(id: string): Promise<any> {
   const response = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
     headers: {
@@ -127,12 +132,17 @@ export async function POST(req: NextRequest) {
     })
   } catch (error) {
     console.error('Error generating car:', error)
+    let errorMessage = 'Failed to generate car'
+    const statusCode = 500
+
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      return NextResponse.json({ error: 'Database error', details: error.message }, { status: 500 })
+      errorMessage = `Database error: ${error.message}`
     } else if (error instanceof Prisma.PrismaClientUnknownRequestError) {
-      return NextResponse.json({ error: 'Unknown database error', details: error.message }, { status: 500 })
-    } else {
-      return NextResponse.json({ error: 'Failed to generate car', details: (error as any).message }, { status: 500 })
+      errorMessage = `Unknown database error: ${error.message}`
+    } else if (error instanceof Error) {
+      errorMessage = error.message
     }
+
+    return NextResponse.json({ error: errorMessage }, { status: statusCode })
   }
 }
