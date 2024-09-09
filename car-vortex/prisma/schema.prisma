@@ -34,6 +34,7 @@ model Car {
   user        User     @relation(fields: [userId], references: [id])
   favorites   Favorite[]
   votedBy     Vote[]
+  @@index([votes(sort: Desc)])
 }
 model Favorite {
   id     String @id @default(uuid())
