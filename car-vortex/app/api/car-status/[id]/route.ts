@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/prisma'
+import crypto from 'crypto'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 const CLOUDINARY_URL = process.env.CLOUDINARY_URL
@@ -49,16 +50,20 @@ async function uploadToCloudinary(imageUrl: string) {
     const [, apiKey, apiSecret, cloudName] = cloudinaryUrlParts
 
     const timestamp = Math.round((new Date()).getTime() / 1000)
-    const signature = await generateSignature(timestamp, apiSecret)
+    const params = {
+      timestamp: timestamp.toString(),
+      upload_preset: CLOUDINARY_UPLOAD_PRESET,
+      file: imageUrl
+    }
+
+    const signature = generateSignature(params, apiSecret)
 
     const formData = new FormData()
     formData.append('file', imageUrl)
     formData.append('timestamp', timestamp.toString())
     formData.append('api_key', apiKey)
     formData.append('signature', signature)
-    if (CLOUDINARY_UPLOAD_PRESET) {
-      formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET)
-    }
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET)
 
     const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
 
@@ -82,10 +87,10 @@ async function uploadToCloudinary(imageUrl: string) {
   }
 }
 
-async function generateSignature(timestamp: number, apiSecret: string) {
-  const crypto = require('crypto')
-  const stringToSign = `timestamp=${timestamp}${apiSecret}`
-  return crypto.createHash('sha256').update(stringToSign).digest('hex')
+function generateSignature(params: Record<string, string>, apiSecret: string) {
+  const sortedKeys = Object.keys(params).sort()
+  const sortedParams = sortedKeys.map(key => `${key}=${params[key]}`).join('&')
+  return crypto.createHash('sha256').update(sortedParams + apiSecret).digest('hex')
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
