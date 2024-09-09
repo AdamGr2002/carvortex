@@ -1,8 +1,10 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/prisma'
 import cloudinary from '@/lib/cloudinary'
+import { Prisma } from '@prisma/client'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 
@@ -35,20 +37,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Replicate API token not configured' }, { status: 500 })
     }
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { credits: true },
-    })
-
-    if (!user || user.credits < 1) {
-      return NextResponse.json({ error: 'Not enough credits' }, { status: 400 })
-    }
-
     const { type, style, environment, details } = await req.json()
 
     if (!type || !style || !environment) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
+
+    const user = await prisma.$transaction(async (tx) => {
+      const user = await tx.user.findUnique({
+        where: { id: userId },
+        select: { credits: true },
+      })
+
+      if (!user || user.credits < 1) {
+        throw new Error('Not enough credits')
+      }
+
+      return user
+    })
 
     console.log('Generating car with data:', { type, style, environment, details })
 
@@ -62,7 +68,7 @@ export async function POST(req: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        version: "39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b", // Stable Diffusion XL
+        version: "39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b",
         input: {
           prompt: fullPrompt,
           negative_prompt: negativePrompt,
@@ -89,23 +95,25 @@ export async function POST(req: NextRequest) {
       folder: 'ai-cars',
     })
 
-    const newCar = await prisma.car.create({
-      data: {
-        imageUrl: uploadResponse.secure_url,
-        title: `${style} ${type} in ${environment}`,
-        description: `A ${style} ${type} car designed for a ${environment} environment. ${details}`,
-        type,
-        style,
-        environment,
-        userId,
-        featured: false, // Set featured to false by default
-      },
-    })
+    const newCar = await prisma.$transaction(async (tx) => {
+      const newCar = await tx.car.create({
+        data: {
+          imageUrl: uploadResponse.secure_url,
+          title: `${style} ${type} in ${environment}`,
+          description: `A ${style} ${type} car designed for a ${environment} environment. ${details}`,
+          type,
+          style,
+          environment,
+          userId,
+        },
+      })
 
-    // Deduct credits after successful generation
-    await prisma.user.update({
-      where: { id: userId },
-      data: { credits: { decrement: 1 } },
+      await tx.user.update({
+        where: { id: userId },
+        data: { credits: { decrement: 1 } },
+      })
+
+      return newCar
     })
 
     return NextResponse.json({ 
@@ -119,6 +127,12 @@ export async function POST(req: NextRequest) {
     })
   } catch (error) {
     console.error('Error generating car:', error)
-    return NextResponse.json({ error: 'Failed to generate car', details: (error as Error).message }, { status: 500 })
+    if (error instanceof Prisma.PrismaClientKnownRequestError) {
+      return NextResponse.json({ error: 'Database error', details: error.message }, { status: 500 })
+    } else if (error instanceof Prisma.PrismaClientUnknownRequestError) {
+      return NextResponse.json({ error: 'Unknown database error', details: error.message }, { status: 500 })
+    } else {
+      return NextResponse.json({ error: 'Failed to generate car', details: (error as any).message }, { status: 500 })
+    }
   }
 }
