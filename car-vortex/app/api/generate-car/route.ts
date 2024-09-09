@@ -1,14 +1,12 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/prisma'
-import cloudinary from '@/lib/cloudinary'
 import { Prisma } from '@prisma/client'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
+const CLOUDINARY_URL = process.env.CLOUDINARY_URL
 
-export const runtime = 'edge'
 
 async function pollForResult(id: string): Promise<any> {
   const response = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
@@ -25,6 +23,35 @@ async function pollForResult(id: string): Promise<any> {
   } else {
     await new Promise(resolve => setTimeout(resolve, 1000))
     return pollForResult(id)
+  }
+}
+
+async function uploadToCloudinary(imageUrl: string) {
+  if (!CLOUDINARY_URL) {
+    throw new Error('CLOUDINARY_URL is not set')
+  }
+
+  const formData = new FormData()
+  formData.append('file', imageUrl)
+  formData.append('upload_preset', 'ml_default')
+
+  try {
+    const response = await fetch(CLOUDINARY_URL, {
+      method: 'POST',
+      body: formData,
+    })
+
+    if (!response.ok) {
+      const errorData = await response.text()
+      console.error('Cloudinary upload failed:', errorData)
+      throw new Error(`Failed to upload image to Cloudinary: ${response.statusText}`)
+    }
+
+    const result = await response.json()
+    return result.secure_url
+  } catch (error) {
+    console.error('Error uploading to Cloudinary:', error)
+    throw new Error('Failed to upload image to Cloudinary')
   }
 }
 
@@ -45,18 +72,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
-    const user = await prisma.$transaction(async (tx) => {
-      const user = await tx.user.findUnique({
-        where: { id: userId },
-        select: { credits: true },
-      })
-
-      if (!user || user.credits < 1) {
-        throw new Error('Not enough credits')
-      }
-
-      return user
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { credits: true },
     })
+
+    if (!user || user.credits < 1) {
+      return NextResponse.json({ error: 'Not enough credits' }, { status: 400 })
+    }
 
     console.log('Generating car with data:', { type, style, environment, details })
 
@@ -93,29 +116,29 @@ export async function POST(req: NextRequest) {
     const prediction = await response.json()
     const result = await pollForResult(prediction.id)
 
-    const uploadResponse = await cloudinary.uploader.upload(result.output[0], {
-      folder: 'ai-cars',
+    let cloudinaryUrl
+    try {
+      cloudinaryUrl = await uploadToCloudinary(result.output[0])
+    } catch (error) {
+      console.error('Cloudinary upload error:', error)
+      return NextResponse.json({ error: 'Failed to upload image to Cloudinary' }, { status: 500 })
+    }
+
+    const newCar = await prisma.car.create({
+      data: {
+        imageUrl: cloudinaryUrl,
+        title: `${style} ${type} in ${environment}`,
+        description: `A ${style} ${type} car designed for a ${environment} environment. ${details}`,
+        type,
+        style,
+        environment,
+        userId,
+      },
     })
 
-    const newCar = await prisma.$transaction(async (tx) => {
-      const newCar = await tx.car.create({
-        data: {
-          imageUrl: uploadResponse.secure_url,
-          title: `${style} ${type} in ${environment}`,
-          description: `A ${style} ${type} car designed for a ${environment} environment. ${details}`,
-          type,
-          style,
-          environment,
-          userId,
-        },
-      })
-
-      await tx.user.update({
-        where: { id: userId },
-        data: { credits: { decrement: 1 } },
-      })
-
-      return newCar
+    await prisma.user.update({
+      where: { id: userId },
+      data: { credits: { decrement: 1 } },
     })
 
     return NextResponse.json({ 
