@@ -8,19 +8,28 @@ const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 const CLOUDINARY_URL = process.env.CLOUDINARY_URL
 
 async function pollForResult(id: string): Promise<any> {
-  const response = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
-    headers: {
-      Authorization: `Token ${REPLICATE_API_TOKEN}`,
-      "Content-Type": "application/json",
-    },
-  })
-  const result = await response.json()
-  if (result.status === 'succeeded') {
-    return result
-  } else if (result.status === 'failed') {
-    throw new Error('Image generation failed')
-  } else {
-    return null // Still in progress
+  try {
+    const response = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
+      headers: {
+        Authorization: `Token ${REPLICATE_API_TOKEN}`,
+        "Content-Type": "application/json",
+      },
+    })
+    if (!response.ok) {
+      throw new Error(`Replicate API responded with status ${response.status}`)
+    }
+    const result = await response.json()
+    console.log('Replicate API response:', result)
+    if (result.status === 'succeeded') {
+      return result
+    } else if (result.status === 'failed') {
+      throw new Error(`Image generation failed: ${result.error || 'Unknown error'}`)
+    } else {
+      return null // Still in progress
+    }
+  } catch (error) {
+    console.error('Error in pollForResult:', error)
+    throw error
   }
 }
 
@@ -29,21 +38,29 @@ async function uploadToCloudinary(imageUrl: string) {
     throw new Error('CLOUDINARY_URL is not set')
   }
 
-  const formData = new FormData()
-  formData.append('file', imageUrl)
-  formData.append('upload_preset', 'ml_default')
+  try {
+    const formData = new FormData()
+    formData.append('file', imageUrl)
+    formData.append('upload_preset', 'ml_default')
 
-  const response = await fetch(CLOUDINARY_URL, {
-    method: 'POST',
-    body: formData,
-  })
+    const response = await fetch(CLOUDINARY_URL, {
+      method: 'POST',
+      body: formData,
+    })
 
-  if (!response.ok) {
-    throw new Error(`Failed to upload image to Cloudinary: ${response.statusText}`)
+    if (!response.ok) {
+      const errorData = await response.text()
+      console.error('Cloudinary upload failed:', errorData)
+      throw new Error(`Failed to upload image to Cloudinary: ${response.statusText}`)
+    }
+
+    const result = await response.json()
+    console.log('Cloudinary upload result:', result)
+    return result.secure_url
+  } catch (error) {
+    console.error('Error uploading to Cloudinary:', error)
+    throw error
   }
-
-  const result = await response.json()
-  return result.secure_url
 }
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
@@ -66,13 +83,16 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
 
     if (car.status === 'PENDING' && car.replicateId) {
+      console.log('Checking status for car:', car.id, 'with replicateId:', car.replicateId)
       // Check the status of the Replicate job
       const result = await pollForResult(car.replicateId)
       
       if (result) {
+        console.log('Replicate job completed, uploading to Cloudinary')
         // Job is complete, upload to Cloudinary
         const cloudinaryUrl = await uploadToCloudinary(result.output[0])
 
+        console.log('Updating car with Cloudinary URL:', cloudinaryUrl)
         // Update the car with the final image URL
         await prisma.car.update({
           where: { id: car.id },
@@ -90,6 +110,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
           description: car.description,
         })
       } else {
+        console.log('Replicate job still in progress')
         // Job is still in progress
         return NextResponse.json({
           id: car.id,
@@ -100,6 +121,7 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     }
 
     // If the car is already completed or failed, just return its current status
+    console.log('Returning current car status:', car.status)
     return NextResponse.json({
       id: car.id,
       status: car.status,
@@ -109,6 +131,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     })
   } catch (error) {
     console.error('Error checking car status:', error)
-    return NextResponse.json({ error: 'Failed to check car status' }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to check car status', details: (error as Error).message }, { status: 500 })
   }
 }
