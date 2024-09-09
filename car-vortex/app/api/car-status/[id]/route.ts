@@ -6,6 +6,7 @@ import { prisma } from '@/lib/prisma'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 const CLOUDINARY_URL = process.env.CLOUDINARY_URL
+const CLOUDINARY_UPLOAD_PRESET = process.env.CLOUDINARY_UPLOAD_PRESET || 'ml_default'
 
 async function pollForResult(id: string): Promise<any> {
   try {
@@ -39,11 +40,21 @@ async function uploadToCloudinary(imageUrl: string) {
   }
 
   try {
+    const cloudinaryUrlParts = CLOUDINARY_URL.match(/cloudinary:\/\/(\d+):([^@]+)@(.+)/)
+    if (!cloudinaryUrlParts) {
+      throw new Error('Invalid CLOUDINARY_URL format')
+    }
+
+    const [, apiKey, apiSecret, cloudName] = cloudinaryUrlParts
+
     const formData = new FormData()
     formData.append('file', imageUrl)
-    formData.append('upload_preset', 'ml_default')
+    formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET)
+    formData.append('api_key', apiKey)
 
-    const response = await fetch(CLOUDINARY_URL, {
+    const uploadUrl = `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`
+
+    const response = await fetch(uploadUrl, {
       method: 'POST',
       body: formData,
     })
@@ -131,6 +142,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     })
   } catch (error) {
     console.error('Error checking car status:', error)
-    return NextResponse.json({ error: 'Failed to check car status', details: (error as Error).message }, { status: 500 })
+    return NextResponse.json({ error: 'Failed to check car status', details: (error as any).message }, { status: 500 })
   }
 }
