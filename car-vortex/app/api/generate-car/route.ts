@@ -8,10 +8,7 @@ import { Prisma } from '@prisma/client'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 
-export const runtime = {
-  runtime: 'edge',
-  maxDuration: 300, // Set maximum duration to 5 minutes (300 seconds)
-}
+export const runtime = 'edge'
 
 async function pollForResult(id: string): Promise<any> {
   const response = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
