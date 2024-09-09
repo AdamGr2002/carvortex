@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
         type: 'car',
         environment,
         userId,
+        status: 'PENDING',
       },
       include: {
         user: {

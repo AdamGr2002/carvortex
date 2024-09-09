@@ -28,6 +28,8 @@ model Car {
   description String
   style       String
   environment String
+  status      String?
+  replicateId String?
   featured    Boolean  @default(false)
   votes       Int      @default(0)
   createdAt   DateTime @default(now())

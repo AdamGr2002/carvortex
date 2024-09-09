@@ -5,8 +5,8 @@ import { useRouter } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { motion, AnimatePresence } from "framer-motion"
-import { toast } from 'react-toastify'
+import { Loader2 } from "lucide-react"
+import { toast } from 'react-hot-toast'
 
 const steps = [
   { id: 'type', title: 'Car Type' },
@@ -18,7 +18,7 @@ const steps = [
 export default function CreateCar() {
   const router = useRouter()
   const [currentStep, setCurrentStep] = useState(0)
-  const [isGenerating, setIsGenerating] = useState(false)
+  const [generatingCar, setGeneratingCar] = useState(false)
   const [carData, setCarData] = useState({
     type: '',
     style: '',
@@ -41,10 +41,8 @@ export default function CreateCar() {
   }
 
   const handleGenerateNew = async () => {
-    setIsGenerating(true)
+    setGeneratingCar(true)
     try {
-      console.log('Sending car data:', carData)
-
       const response = await fetch('/api/generate-car', {
         method: 'POST',
         headers: {
@@ -53,36 +51,39 @@ export default function CreateCar() {
         body: JSON.stringify(carData),
       })
 
-      const responseText = await response.text()
-      console.log('Raw response:', responseText)
-
       if (!response.ok) {
-        let errorMessage = 'Failed to generate car'
-        try {
-          const errorData = JSON.parse(responseText)
-          errorMessage = errorData.error || errorMessage
-        } catch (parseError) {
-          console.error('Error parsing error response:', parseError)
-        }
-        throw new Error(errorMessage)
+        throw new Error('Failed to initiate car generation')
       }
 
-      let data
-      try {
-        data = JSON.parse(responseText)
-      } catch (parseError) {
-        console.error('Error parsing success response:', parseError)
-        throw new Error('Invalid response from server')
-      }
-
-      console.log('Generated car:', data)
-      
-      router.push(`/results/${data.id}`)
+      const data = await response.json()
+      pollCarStatus(data.id)
     } catch (error) {
       console.error('Error generating car:', error)
-      toast.error(`Failed to generate car: ${(error as Error).message}`)
-    } finally {
-      setIsGenerating(false)
+      toast.error('Failed to generate car')
+      setGeneratingCar(false)
+    }
+  }
+
+  const pollCarStatus = async (id: string) => {
+    try {
+      const response = await fetch(`/api/car-status/${id}`)
+      if (!response.ok) {
+        throw new Error('Failed to fetch car status')
+      }
+      const data = await response.json()
+      if (data.status === 'COMPLETED') {
+        toast.success('Car generated successfully!')
+        router.push(`/results/${id}`)
+      } else if (data.status === 'FAILED') {
+        toast.error('Car generation failed')
+        setGeneratingCar(false)
+      } else {
+        setTimeout(() => pollCarStatus(id), 5000) // Poll every 5 seconds
+      }
+    } catch (error) {
+      console.error('Error polling car status:', error)
+      toast.error('Failed to check car status')
+      setGeneratingCar(false)
     }
   }
 
@@ -119,91 +120,85 @@ export default function CreateCar() {
           </div>
         </div>
 
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={currentStep}
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -20 }}
-            transition={{ duration: 0.3 }}
-          >
-            {currentStep === 0 && (
-              <div>
-                <h2 className="text-2xl font-semibold mb-4">Select Car Type</h2>
-                <Select onValueChange={(value) => updateCarData('type', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a car type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="sedan">Sedan</SelectItem>
-                    <SelectItem value="suv">SUV</SelectItem>
-                    <SelectItem value="sports">Sports Car</SelectItem>
-                    <SelectItem value="truck">Truck</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+        <div className="space-y-8">
+          {currentStep === 0 && (
+            <div>
+              <h2 className="text-2xl font-semibold mb-4">Select Car Type</h2>
+              <Select onValueChange={(value) => updateCarData('type', value)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Choose a car type" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sedan">Sedan</SelectItem>
+                  <SelectItem value="suv">SUV</SelectItem>
+                  <SelectItem value="sports">Sports Car</SelectItem>
+                  <SelectItem value="truck">Truck</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
-            {currentStep === 1 && (
-              <div>
-                <h2 className="text-2xl font-semibold mb-4">Choose Style</h2>
-                <Select onValueChange={(value) => updateCarData('style', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose a style" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="futuristic">Futuristic</SelectItem>
-                    <SelectItem value="classic">Classic</SelectItem>
-                    <SelectItem value="minimalist">Minimalist</SelectItem>
-                    <SelectItem value="luxurious">Luxurious</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+          {currentStep === 1 && (
+            <div>
+              <h2 className="text-2xl font-semibold mb-4">Choose Style</h2>
+              <Select onValueChange={(value) => updateCarData('style', value)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Choose a style" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="futuristic">Futuristic</SelectItem>
+                  <SelectItem value="classic">Classic</SelectItem>
+                  <SelectItem value="minimalist">Minimalist</SelectItem>
+                  <SelectItem value="luxurious">Luxurious</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
-            {currentStep === 2 && (
-              <div>
-                <h2 className="text-2xl font-semibold mb-4">Select Environment</h2>
-                <Select onValueChange={(value) => updateCarData('environment', value)}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Choose an environment" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="city">City</SelectItem>
-                    <SelectItem value="nature">Nature</SelectItem>
-                    <SelectItem value="studio">Studio</SelectItem>
-                    <SelectItem value="racetrack">Racetrack</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+          {currentStep === 2 && (
+            <div>
+              <h2 className="text-2xl font-semibold mb-4">Select Environment</h2>
+              <Select onValueChange={(value) => updateCarData('environment', value)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Choose an environment" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="city">City</SelectItem>
+                  <SelectItem value="nature">Nature</SelectItem>
+                  <SelectItem value="studio">Studio</SelectItem>
+                  <SelectItem value="racetrack">Racetrack</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
 
-            {currentStep === 3 && (
-              <div>
-                <h2 className="text-2xl font-semibold mb-4">Additional Details</h2>
-                <Input
-                  placeholder="Describe any additional details"
-                  onChange={(e) => updateCarData('details', e.target.value)}
-                />
-              </div>
-            )}
-          </motion.div>
-        </AnimatePresence>
+          {currentStep === 3 && (
+            <div>
+              <h2 className="text-2xl font-semibold mb-4">Additional Details</h2>
+              <Input
+                placeholder="Describe any additional details"
+                onChange={(e) => updateCarData('details', e.target.value)}
+                className="bg-gray-700 text-white"
+              />
+            </div>
+          )}
+        </div>
 
         <div className="mt-8 flex justify-between">
-          <Button onClick={handleBack} disabled={currentStep === 0}>
+          <Button 
+            onClick={handleBack} 
+            disabled={currentStep === 0 || generatingCar}
+            variant="outline"
+          >
             Back
           </Button>
           <Button 
             onClick={handleNext} 
-            disabled={!isStepComplete() || isGenerating}
+            disabled={!isStepComplete() || generatingCar}
           >
-            {isGenerating ? (
+            {generatingCar ? (
               <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Generating...
               </>
             ) : currentStep === steps.length - 1 ? (

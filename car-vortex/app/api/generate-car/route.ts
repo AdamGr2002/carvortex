@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
@@ -7,8 +8,11 @@ import { Prisma } from '@prisma/client'
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 const CLOUDINARY_URL = process.env.CLOUDINARY_URL
 
+if (!CLOUDINARY_URL) {
+  console.error('CLOUDINARY_URL is not set')
+}
 
-async function pollForResult(id: string): Promise<any> {
+export async function pollForResult(id: string): Promise<any> {
   const response = await fetch(`https://api.replicate.com/v1/predictions/${id}`, {
     headers: {
       Authorization: `Token ${REPLICATE_API_TOKEN}`,
@@ -26,7 +30,7 @@ async function pollForResult(id: string): Promise<any> {
   }
 }
 
-async function uploadToCloudinary(imageUrl: string) {
+export async function uploadToCloudinary(imageUrl: string) {
   if (!CLOUDINARY_URL) {
     throw new Error('CLOUDINARY_URL is not set')
   }
@@ -81,8 +85,30 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Not enough credits' }, { status: 400 })
     }
 
-    console.log('Generating car with data:', { type, style, environment, details })
+    console.log('Initiating car generation with data:', { type, style, environment, details })
 
+    // Create a pending car entry
+    const pendingCar = await prisma.car.create({
+      data: {
+        title: `${style} ${type} in ${environment}`,
+        description: `A ${style} ${type} car designed for a ${environment} environment. ${details}`,
+        type,
+        style,
+        environment,
+        replicateId: '',
+        userId,
+        status: 'PENDING',
+        imageUrl: '', // Add the imageUrl property here
+      },
+    })
+
+    // Deduct credits
+    await prisma.user.update({
+      where: { id: userId },
+      data: { credits: { decrement: 1 } },
+    })
+
+    // Start the car generation process
     const fullPrompt = `A highly detailed, professional photograph of a ${type} car, ${style} style, in a ${environment} environment, with these additional details: ${details}. 8k resolution, realistic lighting, intricate details`
     const negativePrompt = "low quality, blurry, distorted, unrealistic, cartoon, anime, sketch, drawing"
 
@@ -108,51 +134,21 @@ export async function POST(req: NextRequest) {
     })
 
     if (!response.ok) {
-      const error = await response.json()
-      console.error('Replicate API error:', error)
-      return NextResponse.json({ error: 'Image generation failed' }, { status: 500 })
+      throw new Error('Failed to generate image')
     }
 
     const prediction = await response.json()
-    const result = await pollForResult(prediction.id)
 
-    let cloudinaryUrl
-    try {
-      cloudinaryUrl = await uploadToCloudinary(result.output[0])
-    } catch (error) {
-      console.error('Cloudinary upload error:', error)
-      return NextResponse.json({ error: 'Failed to upload image to Cloudinary' }, { status: 500 })
-    }
-
-    const newCar = await prisma.car.create({
-      data: {
-        imageUrl: cloudinaryUrl,
-        title: `${style} ${type} in ${environment}`,
-        description: `A ${style} ${type} car designed for a ${environment} environment. ${details}`,
-        type,
-        style,
-        environment,
-        userId,
-      },
-    })
-
-    await prisma.user.update({
-      where: { id: userId },
-      data: { credits: { decrement: 1 } },
-    })
-
+    // Return the pending car ID immediately
     return NextResponse.json({ 
-      id: newCar.id,
-      imageUrl: newCar.imageUrl,
-      title: newCar.title,
-      description: newCar.description,
-      type: newCar.type,
-      style: newCar.style,
-      environment: newCar.environment,
+      id: pendingCar.id,
+      status: 'PENDING',
+      message: 'Car generation started',
     })
+
   } catch (error) {
-    console.error('Error generating car:', error)
-    let errorMessage = 'Failed to generate car'
+    console.error('Error initiating car generation:', error)
+    let errorMessage = 'Failed to initiate car generation'
     const statusCode = 500
 
     if (error instanceof Prisma.PrismaClientKnownRequestError) {
