@@ -8,7 +8,7 @@ import { Prisma } from '@prisma/client'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 
-export const config = {
+export const runtime = {
   runtime: 'edge',
   maxDuration: 300, // Set maximum duration to 5 minutes (300 seconds)
 }
