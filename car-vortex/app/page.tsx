@@ -7,9 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { useUser, SignInButton, UserButton } from "@clerk/nextjs"
 import { motion } from "framer-motion"
-import { toast } from 'react-toastify'
+import { toast } from 'react-hot-toast'
 import { ThumbsUp } from 'lucide-react'
 import InfiniteScroll from 'react-infinite-scroll-component'
+import ThemedCollections from './components/themed-collection'
+import CommunityFeed from './components/community-feed'
 
 interface Car {
   id: string
@@ -61,7 +63,7 @@ export default function Home() {
 
   useEffect(() => {
     fetchFeaturedCars()
-  }, [])
+  }, [fetchFeaturedCars])
 
   useEffect(() => {
     const fetchCredits = async () => {
@@ -229,6 +231,14 @@ export default function Home() {
               ))}
             </div>
           </InfiniteScroll>
+        </section>
+
+        <section className="mt-16">
+          <ThemedCollections />
+        </section>
+
+        <section className="mt-16">
+          <CommunityFeed />
         </section>
       </main>
     </div>

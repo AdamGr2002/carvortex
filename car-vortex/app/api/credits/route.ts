@@ -28,7 +28,8 @@ export async function GET() {
         data: {
           id: userId,
           email: primaryEmail,
-          credits: 5, // Start with 5 credits for new users
+          credits: 7,
+          avatar:'', // Start with 5 credits for new users
         },
       })
       return NextResponse.json({ credits: newUser.credits })

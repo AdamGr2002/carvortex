@@ -13,16 +13,33 @@ model User {
   id        String   @id
   email     String   @unique
   name      String?
+  avatar    String
   credits   Int      @default(10)
   createdAt DateTime @default(now())
+  carDesigns CarDesign[]
   cars      Car[]
   votes     Vote[]
 }
-
-model Car {
-  id          String   @id @default(uuid())
-  userId      String
+model Collection {
+  id          String @id @default(cuid())
+  title       String
+  description String
+  cars        Car[]
+}
+model CarDesign {
+  id          String @id @default(cuid())
+  title       String
   imageUrl    String
+  likes       Int    @default(0)
+  comments    Int    @default(0)
+  createdAt   DateTime @default(now())
+  creator     User   @relation(fields: [creatorId], references: [id])
+  creatorId   String
+}
+model Car {
+  id          String   @id @default(cuid())
+  userId      String
+  imageUrl    String?
   title       String
   type        String
   description String
@@ -30,9 +47,13 @@ model Car {
   environment String
   status      String?
   replicateId String?
+  collection  Collection @relation(fields: [collectionId], references: [id])
+  collectionId String
+  likes       Int        @default(0)
   featured    Boolean  @default(false)
   votes       Int      @default(0)
   createdAt   DateTime @default(now())
+  updatedAt   DateTime   @updatedAt
   user        User     @relation(fields: [userId], references: [id])
   favorites   Favorite[]
   votedBy     Vote[]

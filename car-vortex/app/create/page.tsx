@@ -1,12 +1,15 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Loader2 } from "lucide-react"
 import { toast } from 'react-hot-toast'
+import { useAtom } from 'jotai'
+import { communityFeedAtom } from '../atoms/communityFeed'
 
 const steps = [
   { id: 'type', title: 'Car Type' },
@@ -14,6 +17,11 @@ const steps = [
   { id: 'environment', title: 'Environment' },
   { id: 'details', title: 'Additional Details' },
 ]
+
+interface Collection {
+  id: string
+  title: string
+}
 
 export default function CreateCar() {
   const router = useRouter()
@@ -24,7 +32,28 @@ export default function CreateCar() {
     style: '',
     environment: '',
     details: '',
+    collectionId: 'default',
   })
+  const [collections, setCollections] = useState<Collection[]>([])
+  const [communityFeed, setCommunityFeed] = useAtom(communityFeedAtom)
+
+  useEffect(() => {
+    const fetchCollections = async () => {
+      try {
+        const response = await fetch('/api/collections')
+        if (!response.ok) {
+          throw new Error('Failed to fetch collections')
+        }
+        const data = await response.json()
+        setCollections(data)
+      } catch (error) {
+        console.error('Error fetching collections:', error)
+        toast.error('Failed to load collections. Please try again.')
+      }
+    }
+
+    fetchCollections()
+  }, [])
 
   const handleNext = () => {
     if (currentStep < steps.length - 1) {
@@ -58,6 +87,10 @@ export default function CreateCar() {
 
       const data = await response.json()
       toast.success('Car generation started')
+      
+      // Add the new car to the community feed
+      setCommunityFeed((prevFeed) => [data.car, ...prevFeed])
+      
       pollCarStatus(data.id)
     } catch (error) {
       console.error('Error generating car:', error)
@@ -68,26 +101,44 @@ export default function CreateCar() {
 
   const pollCarStatus = async (id: string) => {
     try {
-      const response = await fetch(`/api/car-status/${id}`)
+      const response = await fetch('/api/update-car-image', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ carId: id }),
+      })
+
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to fetch car status')
+        throw new Error('Failed to fetch car status')
       }
+
       const data = await response.json()
+
       if (data.status === 'COMPLETED') {
         toast.success('Car generated successfully!')
+        
+        // Update the car in the community feed with the new image URL
+        setCommunityFeed((prevFeed) =>
+          prevFeed.map((car) =>
+            car.id === id ? { ...car, imageUrl: data.imageUrl, status: 'COMPLETED' } : car
+          )
+        )
+        
         router.push(`/results/${id}`)
       } else if (data.status === 'FAILED') {
         toast.error('Car generation failed')
         setGeneratingCar(false)
+        
+        // Remove the failed car from the community feed
+        setCommunityFeed((prevFeed) => prevFeed.filter((car) => car.id !== id))
       } else {
         // Still pending, poll again after a delay
-        toast.loading('Car generation in progress...', { duration: 5000 })
         setTimeout(() => pollCarStatus(id), 5000) // Poll every 5 seconds
       }
     } catch (error) {
       console.error('Error polling car status:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to check car status')
+      toast.error('Failed to check car status')
       setGeneratingCar(false)
     }
   }
@@ -198,7 +249,7 @@ export default function CreateCar() {
             Back
           </Button>
           <Button 
-            onClick={handleNext} 
+            onClick={handleNext}
             disabled={!isStepComplete() || generatingCar}
           >
             {generatingCar ? (

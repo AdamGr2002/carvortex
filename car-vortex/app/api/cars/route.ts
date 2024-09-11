@@ -70,6 +70,8 @@ export async function POST(req: NextRequest) {
         environment,
         userId,
         status: 'PENDING',
+        likes: 0,
+        collectionId: '1',
       },
       include: {
         user: {
