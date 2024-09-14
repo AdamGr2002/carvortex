@@ -17,6 +17,10 @@ export async function POST(req: NextRequest) {
       throw new Error('Replicate API token not configured')
     }
 
+    if (!CLOUDINARY_URL) {
+      throw new Error('Cloudinary URL not configured')
+    }
+
     const { 
       type, 
       style, 
@@ -112,11 +116,15 @@ export async function POST(req: NextRequest) {
       },
     })
 
+    console.log('Created pending car:', pendingCar)
+
     // Deduct credits
     await prisma.user.update({
       where: { id: userId },
       data: { credits: { decrement: 1 } },
     })
+
+    console.log('Deducted credit from user')
 
     // Start the car generation process
     const fullPrompt = `A highly detailed, professional photograph of a ${type} car, ${style} style, in a ${environment} environment. 
@@ -128,6 +136,8 @@ export async function POST(req: NextRequest) {
     8k resolution, realistic lighting, intricate details`
 
     const negativePrompt = "low quality, blurry, distorted, unrealistic, cartoon, anime, sketch, drawing"
+
+    console.log('Sending request to Replicate API')
 
     const response = await fetch("https://api.replicate.com/v1/predictions", {
       method: "POST",
@@ -157,12 +167,15 @@ export async function POST(req: NextRequest) {
     }
 
     const prediction = await response.json()
+    console.log('Received prediction from Replicate:', prediction)
 
     // Update the car with the Replicate prediction ID
     await prisma.car.update({
       where: { id: pendingCar.id },
       data: { replicateId: prediction.id },
     })
+
+    console.log('Updated car with Replicate prediction ID')
 
     // Start a background process to check the prediction status and update the car
     checkPredictionStatus(pendingCar.id, prediction.id)
@@ -186,6 +199,8 @@ export async function POST(req: NextRequest) {
 
 async function checkPredictionStatus(carId: string, predictionId: string) {
   try {
+    console.log(`Checking prediction status for car ${carId}, prediction ${predictionId}`)
+
     const response = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
       headers: {
         Authorization: `Token ${REPLICATE_API_TOKEN}`,
@@ -197,11 +212,14 @@ async function checkPredictionStatus(carId: string, predictionId: string) {
     }
 
     const prediction = await response.json()
+    console.log('Prediction status:', prediction.status)
 
     if (prediction.status === 'succeeded') {
       const imageUrl = prediction.output[0]
+      console.log('Generated image URL:', imageUrl)
       
       // Upload to Cloudinary using the URL from .env
+      console.log('Uploading to Cloudinary')
       const cloudinaryResponse = await fetch(`${CLOUDINARY_URL}/upload`, {
         method: 'POST',
         headers: {
@@ -214,10 +232,13 @@ async function checkPredictionStatus(carId: string, predictionId: string) {
       })
 
       if (!cloudinaryResponse.ok) {
+        const errorData = await cloudinaryResponse.json()
+        console.error('Cloudinary upload error:', errorData)
         throw new Error('Failed to upload image to Cloudinary')
       }
 
       const cloudinaryData = await cloudinaryResponse.json()
+      console.log('Cloudinary upload successful:', cloudinaryData)
 
       // Update car with Cloudinary URL
       await prisma.car.update({
@@ -227,13 +248,16 @@ async function checkPredictionStatus(carId: string, predictionId: string) {
           status: 'COMPLETED',
         },
       })
+      console.log('Updated car with Cloudinary URL')
     } else if (prediction.status === 'failed') {
+      console.log('Prediction failed')
       await prisma.car.update({
         where: { id: carId },
         data: { status: 'FAILED' },
       })
     } else {
       // If still processing, check again after a delay
+      console.log('Prediction still processing, checking again in 5 seconds')
       setTimeout(() => checkPredictionStatus(carId, predictionId), 5000)
     }
   } catch (error) {
