@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/prisma'
-import { Prisma } from '@prisma/client'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 const REPLICATE_MODEL_VERSION = "39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b"
@@ -17,7 +16,7 @@ export async function POST(req: NextRequest) {
       throw new Error('Replicate API token not configured')
     }
 
-    const { type, style, environment, details, collectionId } = await req.json()
+    const { type, style, environment, bodyColor, wheelSize, spoiler, lowered, backgroundScene, timeOfDay, collectionId, additionalDetails } = await req.json()
 
     if (!type || !style || !environment) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -32,13 +31,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Not enough credits' }, { status: 400 })
     }
 
-    console.log('Initiating car generation with data:', { type, style, environment, details, collectionId })
+    console.log('Initiating car generation with data:', { type, style, environment, bodyColor, wheelSize, spoiler, lowered, backgroundScene, timeOfDay, collectionId, additionalDetails })
 
     // Handle default collection
     let actualCollectionId: string
     if (!collectionId || collectionId === 'default') {
       const defaultCollection = await prisma.collection.findFirst({
-        where: { title: 'Default Collection' },
+        where: { userId, title: 'Default Collection' },
       })
 
       if (defaultCollection) {
@@ -48,6 +47,7 @@ export async function POST(req: NextRequest) {
           data: { 
             title: 'Default Collection', 
             description: 'Default collection for uncategorized cars',
+            userId 
           },
         })
         actualCollectionId = newDefaultCollection.id
@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     const pendingCar = await prisma.car.create({
       data: {
         title: `${style} ${type} in ${environment}`,
-        description: `A ${style} ${type} car designed for a ${environment} environment. ${details}`,
+        description: `A ${style} ${type} car designed for a ${environment} environment. ${additionalDetails}`,
         type,
         style,
         environment,
@@ -88,7 +88,7 @@ export async function POST(req: NextRequest) {
     })
 
     // Start the car generation process
-    const fullPrompt = `A highly detailed, professional photograph of a ${type} car, ${style} style, in a ${environment} environment, with these additional details: ${details}. 8k resolution, realistic lighting, intricate details`
+    const fullPrompt = `A highly detailed, professional photograph of a ${type} car, ${style} style, in a ${environment} environment. Body color: ${bodyColor}. Wheel size: ${wheelSize} inches. ${spoiler ? 'With a spoiler.' : 'Without a spoiler.'} ${lowered ? 'Lowered suspension.' : 'Standard suspension.'} Background: ${backgroundScene}. Time of day: ${timeOfDay}. Additional details: ${additionalDetails}. 8k resolution, realistic lighting, intricate details`
     const negativePrompt = "low quality, blurry, distorted, unrealistic, cartoon, anime, sketch, drawing"
 
     const response = await fetch("https://api.replicate.com/v1/predictions", {
@@ -139,23 +139,6 @@ export async function POST(req: NextRequest) {
 
   } catch (error) {
     console.error('Error initiating car generation:', error)
-    let errorMessage = 'Failed to initiate car generation'
-    let statusCode = 500
-
-    if (error instanceof Prisma.PrismaClientKnownRequestError) {
-      errorMessage = `Database error: ${error.message}`
-      statusCode = 400
-    } else if (error instanceof Prisma.PrismaClientUnknownRequestError) {
-      errorMessage = `Unknown database error: ${error.message}`
-    } else if (error instanceof Error) {
-      errorMessage = error.message
-      if (errorMessage.includes('Unauthorized')) {
-        statusCode = 401
-      } else if (errorMessage.includes('Not enough credits')) {
-        statusCode = 400
-      }
-    }
-
-    return NextResponse.json({ error: errorMessage }, { status: statusCode })
+    return NextResponse.json({ error: 'Failed to generate car' }, { status: 500 })
   }
 }

@@ -15,6 +15,7 @@ model User {
   name      String?
   avatar    String?
   credits   Int      @default(10)
+  collections Collection[]
   createdAt DateTime @default(now())
   carDesigns CarDesign[]
   cars      Car[]
@@ -25,6 +26,10 @@ model Collection {
   title       String
   description String
   cars        Car[]
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }
 model CarDesign {
   id          String @id @default(cuid())
@@ -45,7 +50,13 @@ model Car {
   description String
   style       String
   environment String
-  status      String?
+  bodyColor      String     @default("#000000")
+  wheelSize      Int        @default(17)
+  spoiler        Boolean    @default(false)
+  lowered        Boolean    @default(false)
+  backgroundScene String    @default("city")
+  timeOfDay      String     @default("day")
+  status      CarStatus @default(PENDING)
   replicateId String?
   collection  Collection @relation(fields: [collectionId], references: [id])
   collectionId String
@@ -75,4 +86,10 @@ model Vote {
 
   @@unique([carId, userId])
   User User[]
+}
+enum CarStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
 }

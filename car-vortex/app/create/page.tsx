@@ -71,7 +71,8 @@ export default function CreateCar() {
       })
 
       if (!response.ok) {
-        throw new Error('Failed to generate car')
+        const errorData = await response.json()
+        throw new Error(errorData.error || 'Failed to generate car')
       }
 
       const data = await response.json()
@@ -79,7 +80,7 @@ export default function CreateCar() {
       router.push(`/results/${data.id}`)
     } catch (error) {
       console.error('Error generating car:', error)
-      toast.error('Failed to generate car')
+      toast.error(error instanceof Error ? error.message : 'Failed to generate car')
     } finally {
       setLoading(false)
     }
@@ -243,7 +244,7 @@ export default function CreateCar() {
         </div>
         <Button
           onClick={handleSubmit}
-          disabled={loading}
+          disabled={loading || !carData.type || !carData.style || !carData.environment}
           className="w-full"
         >
           {loading ? (
