@@ -41,9 +41,9 @@ const nextConfig = {
             key: 'Content-Security-Policy',
             value: `
               default-src 'self';
-              script-src 'self' 'unsafe-eval' 'unsafe-inline';
+              script-src 'self' 'unsafe-eval' 'unsafe-inline' https://*.clerk.accounts.dev;
               style-src 'self' 'unsafe-inline';
-              img-src 'self' data: blob: https://*.cloudinary.com;
+              img-src 'self' data: blob: https://*.cloudinary.com https://*.clerk.com;
               font-src 'self';
               object-src 'none';
               base-uri 'self';
@@ -51,6 +51,7 @@ const nextConfig = {
               frame-ancestors 'none';
               block-all-mixed-content;
               upgrade-insecure-requests;
+              connect-src 'self' https://*.clerk.com https://*.clerk.accounts.dev;
             `.replace(/\s{2,}/g, ' ').trim()
           },
         ],
