@@ -69,7 +69,6 @@ export default function CreateCar() {
 
     fetchCollections()
 
-    // Load saved preferences from local storage
     const savedPreferences = localStorage.getItem('carPreferences')
     if (savedPreferences) {
       setCarData(JSON.parse(savedPreferences))
@@ -79,13 +78,21 @@ export default function CreateCar() {
   const handleInputChange = (field: keyof CarData, value: string | number | boolean) => {
     setCarData(prev => {
       const newData = { ...prev, [field]: value }
-      // Save preferences to local storage
       localStorage.setItem('carPreferences', JSON.stringify(newData))
       return newData
     })
   }
 
+  const isFormValid = () => {
+    return carData.type !== '' && carData.style !== '' && carData.environment !== ''
+  }
+
   const handleSubmit = async () => {
+    if (!isFormValid()) {
+      toast.error('Please fill in all required fields')
+      return
+    }
+
     setLoading(true)
     try {
       const response = await fetch('/api/generate-car', {
@@ -126,7 +133,10 @@ export default function CreateCar() {
         <TabsContent value="basics">
           <div className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="type">Car Type</Label>
+              <Label htmlFor="type" className="flex items-center">
+                Car Type
+                <span className="text-red-500 ml-1">*</span>
+              </Label>
               <Select value={carData.type} onValueChange={(value) => handleInputChange('type', value)}>
                 <SelectTrigger id="type">
                   <SelectValue placeholder="Select car type" />
@@ -140,7 +150,10 @@ export default function CreateCar() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="style">Car Style</Label>
+              <Label htmlFor="style" className="flex items-center">
+                Car Style
+                <span className="text-red-500 ml-1">*</span>
+              </Label>
               <Select value={carData.style} onValueChange={(value) => handleInputChange('style', value)}>
                 <SelectTrigger id="style">
                   <SelectValue placeholder="Select car style" />
@@ -150,6 +163,23 @@ export default function CreateCar() {
                   <SelectItem value="classic">Classic</SelectItem>
                   <SelectItem value="futuristic">Futuristic</SelectItem>
                   <SelectItem value="retro">Retro</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="environment" className="flex items-center">
+                Environment
+                <span className="text-red-500 ml-1">*</span>
+              </Label>
+              <Select value={carData.environment} onValueChange={(value) => handleInputChange('environment', value)}>
+                <SelectTrigger id="environment">
+                  <SelectValue placeholder="Select environment" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="city">City</SelectItem>
+                  <SelectItem value="nature">Nature</SelectItem>
+                  <SelectItem value="studio">Studio</SelectItem>
+                  <SelectItem value="racetrack">Racetrack</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -270,7 +300,7 @@ export default function CreateCar() {
         </div>
         <Button
           onClick={handleSubmit}
-          disabled={loading || !carData.type || !carData.style || !carData.environment}
+          disabled={loading || !isFormValid()}
           className="w-full"
         >
           {loading ? (
