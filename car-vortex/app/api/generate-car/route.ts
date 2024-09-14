@@ -4,6 +4,7 @@ import { prisma } from '@/lib/prisma'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 const REPLICATE_MODEL_VERSION = "39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b"
+const CLOUDINARY_URL = process.env.CLOUDINARY_URL
 
 export async function POST(req: NextRequest) {
   try {
@@ -16,7 +17,19 @@ export async function POST(req: NextRequest) {
       throw new Error('Replicate API token not configured')
     }
 
-    const { type, style, environment, bodyColor, wheelSize, spoiler, lowered, backgroundScene, timeOfDay, collectionId, additionalDetails } = await req.json()
+    const { 
+      type, 
+      style, 
+      environment, 
+      bodyColor, 
+      wheelSize, 
+      spoiler, 
+      lowered, 
+      backgroundScene, 
+      timeOfDay, 
+      collectionId, 
+      additionalDetails 
+    } = await req.json()
 
     if (!type || !style || !environment) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
@@ -31,7 +44,19 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Not enough credits' }, { status: 400 })
     }
 
-    console.log('Initiating car generation with data:', { type, style, environment, bodyColor, wheelSize, spoiler, lowered, backgroundScene, timeOfDay, collectionId, additionalDetails })
+    console.log('Initiating car generation with data:', { 
+      type, 
+      style, 
+      environment, 
+      bodyColor, 
+      wheelSize, 
+      spoiler, 
+      lowered, 
+      backgroundScene, 
+      timeOfDay, 
+      collectionId, 
+      additionalDetails 
+    })
 
     // Handle default collection
     let actualCollectionId: string
@@ -64,6 +89,12 @@ export async function POST(req: NextRequest) {
         type,
         style,
         environment,
+        bodyColor,
+        wheelSize,
+        spoiler,
+        lowered,
+        backgroundScene,
+        timeOfDay,
         userId,
         status: 'PENDING',
         imageUrl: null,
@@ -88,7 +119,14 @@ export async function POST(req: NextRequest) {
     })
 
     // Start the car generation process
-    const fullPrompt = `A highly detailed, professional photograph of a ${type} car, ${style} style, in a ${environment} environment. Body color: ${bodyColor}. Wheel size: ${wheelSize} inches. ${spoiler ? 'With a spoiler.' : 'Without a spoiler.'} ${lowered ? 'Lowered suspension.' : 'Standard suspension.'} Background: ${backgroundScene}. Time of day: ${timeOfDay}. Additional details: ${additionalDetails}. 8k resolution, realistic lighting, intricate details`
+    const fullPrompt = `A highly detailed, professional photograph of a ${type} car, ${style} style, in a ${environment} environment. 
+    Body color: ${bodyColor}. Wheel size: ${wheelSize} inches. 
+    ${spoiler ? 'With a spoiler.' : 'Without a spoiler.'} 
+    ${lowered ? 'Lowered suspension.' : 'Standard suspension.'} 
+    Background: ${backgroundScene}. Time of day: ${timeOfDay}. 
+    Additional details: ${additionalDetails}. 
+    8k resolution, realistic lighting, intricate details`
+
     const negativePrompt = "low quality, blurry, distorted, unrealistic, cartoon, anime, sketch, drawing"
 
     const response = await fetch("https://api.replicate.com/v1/predictions", {
@@ -126,6 +164,9 @@ export async function POST(req: NextRequest) {
       data: { replicateId: prediction.id },
     })
 
+    // Start a background process to check the prediction status and update the car
+    checkPredictionStatus(pendingCar.id, prediction.id)
+
     // Return the pending car data immediately
     return NextResponse.json({ 
       id: pendingCar.id,
@@ -140,5 +181,66 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     console.error('Error initiating car generation:', error)
     return NextResponse.json({ error: 'Failed to generate car' }, { status: 500 })
+  }
+}
+
+async function checkPredictionStatus(carId: string, predictionId: string) {
+  try {
+    const response = await fetch(`https://api.replicate.com/v1/predictions/${predictionId}`, {
+      headers: {
+        Authorization: `Token ${REPLICATE_API_TOKEN}`,
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error('Failed to fetch prediction status')
+    }
+
+    const prediction = await response.json()
+
+    if (prediction.status === 'succeeded') {
+      const imageUrl = prediction.output[0]
+      
+      // Upload to Cloudinary using the URL from .env
+      const cloudinaryResponse = await fetch(`${CLOUDINARY_URL}/upload`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          file: imageUrl,
+          upload_preset: 'car-vortex',
+        }),
+      })
+
+      if (!cloudinaryResponse.ok) {
+        throw new Error('Failed to upload image to Cloudinary')
+      }
+
+      const cloudinaryData = await cloudinaryResponse.json()
+
+      // Update car with Cloudinary URL
+      await prisma.car.update({
+        where: { id: carId },
+        data: {
+          imageUrl: cloudinaryData.secure_url,
+          status: 'COMPLETED',
+        },
+      })
+    } else if (prediction.status === 'failed') {
+      await prisma.car.update({
+        where: { id: carId },
+        data: { status: 'FAILED' },
+      })
+    } else {
+      // If still processing, check again after a delay
+      setTimeout(() => checkPredictionStatus(carId, predictionId), 5000)
+    }
+  } catch (error) {
+    console.error('Error checking prediction status:', error)
+    await prisma.car.update({
+      where: { id: carId },
+      data: { status: 'FAILED' },
+    })
   }
 }
