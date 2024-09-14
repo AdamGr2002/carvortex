@@ -5,18 +5,14 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Loader2 } from "lucide-react"
+import { Slider } from "@/components/ui/slider"
+import { Switch } from "@/components/ui/switch"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
 import { toast } from 'react-hot-toast'
-import { useAtom } from 'jotai'
-import { communityFeedAtom } from '../atoms/communityFeed'
-
-const steps = [
-  { id: 'type', title: 'Car Type' },
-  { id: 'style', title: 'Style' },
-  { id: 'environment', title: 'Environment' },
-  { id: 'details', title: 'Additional Details' },
-]
+import { Loader2 } from "lucide-react"
 
 interface Collection {
   id: string
@@ -25,17 +21,21 @@ interface Collection {
 
 export default function CreateCar() {
   const router = useRouter()
-  const [currentStep, setCurrentStep] = useState(0)
-  const [generatingCar, setGeneratingCar] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [collections, setCollections] = useState<Collection[]>([])
   const [carData, setCarData] = useState({
     type: '',
     style: '',
     environment: '',
-    details: '',
+    bodyColor: '#000000',
+    wheelSize: 17,
+    spoiler: false,
+    lowered: false,
+    backgroundScene: 'city',
+    timeOfDay: 'day',
     collectionId: 'default',
+    additionalDetails: '',
   })
-  const [collections, setCollections] = useState<Collection[]>([])
-  const [communityFeed, setCommunityFeed] = useAtom(communityFeedAtom)
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -48,29 +48,19 @@ export default function CreateCar() {
         setCollections(data)
       } catch (error) {
         console.error('Error fetching collections:', error)
-        toast.error('Failed to load collections. Please try again.')
+        toast.error('Failed to load collections')
       }
     }
 
     fetchCollections()
   }, [])
 
-  const handleNext = () => {
-    if (currentStep < steps.length - 1) {
-      setCurrentStep(currentStep + 1)
-    } else {
-      handleGenerateNew()
-    }
+  const handleInputChange = (field: string, value: string | number | boolean) => {
+    setCarData(prev => ({ ...prev, [field]: value }))
   }
 
-  const handleBack = () => {
-    if (currentStep > 0) {
-      setCurrentStep(currentStep - 1)
-    }
-  }
-
-  const handleGenerateNew = async () => {
-    setGeneratingCar(true)
+  const handleSubmit = async () => {
+    setLoading(true)
     try {
       const response = await fetch('/api/generate-car', {
         method: 'POST',
@@ -81,108 +71,38 @@ export default function CreateCar() {
       })
 
       if (!response.ok) {
-        const errorData = await response.json()
-        throw new Error(errorData.error || 'Failed to initiate car generation')
+        throw new Error('Failed to generate car')
       }
 
       const data = await response.json()
-      toast.success('Car generation started')
-      
-      // Add the new car to the community feed
-      setCommunityFeed((prevFeed) => [data.car, ...prevFeed])
-      
-      pollCarStatus(data.id)
+      toast.success('Car generation started!')
+      router.push(`/results/${data.id}`)
     } catch (error) {
       console.error('Error generating car:', error)
-      toast.error(error instanceof Error ? error.message : 'Failed to generate car')
-      setGeneratingCar(false)
+      toast.error('Failed to generate car')
+    } finally {
+      setLoading(false)
     }
-  }
-
-  const pollCarStatus = async (id: string) => {
-    try {
-      const response = await fetch('/api/update-car-image', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ carId: id }),
-      })
-
-      if (!response.ok) {
-        throw new Error('Failed to fetch car status')
-      }
-
-      const data = await response.json()
-
-      if (data.status === 'COMPLETED') {
-        toast.success('Car generated successfully!')
-        
-        // Update the car in the community feed with the new image URL
-        setCommunityFeed((prevFeed) =>
-          prevFeed.map((car) =>
-            car.id === id ? { ...car, imageUrl: data.imageUrl, status: 'COMPLETED' } : car
-          )
-        )
-        
-        router.push(`/results/${id}`)
-      } else if (data.status === 'FAILED') {
-        toast.error('Car generation failed')
-        setGeneratingCar(false)
-        
-        // Remove the failed car from the community feed
-        setCommunityFeed((prevFeed) => prevFeed.filter((car) => car.id !== id))
-      } else {
-        // Still pending, poll again after a delay
-        setTimeout(() => pollCarStatus(id), 5000) // Poll every 5 seconds
-      }
-    } catch (error) {
-      console.error('Error polling car status:', error)
-      toast.error('Failed to check car status')
-      setGeneratingCar(false)
-    }
-  }
-
-  const updateCarData = (field: string, value: string) => {
-    setCarData({ ...carData, [field]: value })
-  }
-
-  const isStepComplete = () => {
-    const currentField = steps[currentStep].id as keyof typeof carData
-    return carData[currentField] !== ''
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-gray-900 to-gray-800 text-white py-12">
-      <div className="container mx-auto max-w-2xl">
-        <h1 className="text-4xl font-bold mb-8 text-center">Create Your Dream Car</h1>
-        
-        <div className="mb-8">
-          <div className="flex justify-between">
-            {steps.map((step, index) => (
-              <div
-                key={step.id}
-                className={`text-sm ${index <= currentStep ? 'text-blue-500' : 'text-gray-500'}`}
-              >
-                {step.title}
-              </div>
-            ))}
-          </div>
-          <div className="mt-2 h-2 bg-gray-700 rounded-full">
-            <div
-              className="h-full bg-blue-500 rounded-full transition-all duration-300 ease-in-out"
-              style={{ width: `${((currentStep + 1) / steps.length) * 100}%` }}
-            ></div>
-          </div>
-        </div>
-
-        <div className="space-y-8">
-          {currentStep === 0 && (
-            <div>
-              <h2 className="text-2xl font-semibold mb-4">Select Car Type</h2>
-              <Select onValueChange={(value) => updateCarData('type', value)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Choose a car type" />
+    <div className="container mx-auto py-8 px-4 max-w-4xl">
+      <h1 className="text-4xl font-bold mb-8 text-center">Create Your Dream Car</h1>
+      <Tabs defaultValue="basics" className="w-full">
+        <TabsList className="grid w-full grid-cols-5 mb-8">
+          <TabsTrigger value="basics">Basics</TabsTrigger>
+          <TabsTrigger value="exterior">Exterior</TabsTrigger>
+          <TabsTrigger value="performance">Performance</TabsTrigger>
+          <TabsTrigger value="environment">Environment</TabsTrigger>
+          <TabsTrigger value="collection">Collection</TabsTrigger>
+        </TabsList>
+        <TabsContent value="basics">
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="type">Car Type</Label>
+              <Select onValueChange={(value) => handleInputChange('type', value)}>
+                <SelectTrigger id="type">
+                  <SelectValue placeholder="Select car type" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="sedan">Sedan</SelectItem>
@@ -192,78 +112,149 @@ export default function CreateCar() {
                 </SelectContent>
               </Select>
             </div>
-          )}
-
-          {currentStep === 1 && (
-            <div>
-              <h2 className="text-2xl font-semibold mb-4">Choose Style</h2>
-              <Select onValueChange={(value) => updateCarData('style', value)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Choose a style" />
+            <div className="space-y-2">
+              <Label htmlFor="style">Car Style</Label>
+              <Select onValueChange={(value) => handleInputChange('style', value)}>
+                <SelectTrigger id="style">
+                  <SelectValue placeholder="Select car style" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="futuristic">Futuristic</SelectItem>
+                  <SelectItem value="modern">Modern</SelectItem>
                   <SelectItem value="classic">Classic</SelectItem>
-                  <SelectItem value="minimalist">Minimalist</SelectItem>
-                  <SelectItem value="luxurious">Luxurious</SelectItem>
+                  <SelectItem value="futuristic">Futuristic</SelectItem>
+                  <SelectItem value="retro">Retro</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          )}
-
-          {currentStep === 2 && (
-            <div>
-              <h2 className="text-2xl font-semibold mb-4">Select Environment</h2>
-              <Select onValueChange={(value) => updateCarData('environment', value)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Choose an environment" />
+          </div>
+        </TabsContent>
+        <TabsContent value="exterior">
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="bodyColor">Body Color</Label>
+              <div className="flex items-center space-x-4">
+                <Input
+                  id="bodyColor"
+                  type="color"
+                  value={carData.bodyColor}
+                  onChange={(e) => handleInputChange('bodyColor', e.target.value)}
+                  className="w-12 h-12 p-1 rounded-md"
+                />
+                <span className="text-sm text-gray-500">{carData.bodyColor}</span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="wheelSize">Wheel Size</Label>
+              <Slider
+                id="wheelSize"
+                min={15}
+                max={22}
+                step={1}
+                value={[carData.wheelSize]}
+                onValueChange={(value) => handleInputChange('wheelSize', value[0])}
+              />
+              <span className="text-sm text-gray-500">{carData.wheelSize} inches</span>
+            </div>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="spoiler">Spoiler</Label>
+              <Switch
+                id="spoiler"
+                checked={carData.spoiler}
+                onCheckedChange={(checked) => handleInputChange('spoiler', checked)}
+              />
+            </div>
+          </div>
+        </TabsContent>
+        <TabsContent value="performance">
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <Label htmlFor="lowered">Lowered Suspension</Label>
+              <Switch
+                id="lowered"
+                checked={carData.lowered}
+                onCheckedChange={(checked) => handleInputChange('lowered', checked)}
+              />
+            </div>
+          </div>
+        </TabsContent>
+        <TabsContent value="environment">
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="backgroundScene">Background Scene</Label>
+              <Select onValueChange={(value) => handleInputChange('backgroundScene', value)}>
+                <SelectTrigger id="backgroundScene">
+                  <SelectValue placeholder="Select background scene" />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="city">City</SelectItem>
                   <SelectItem value="nature">Nature</SelectItem>
-                  <SelectItem value="studio">Studio</SelectItem>
                   <SelectItem value="racetrack">Racetrack</SelectItem>
+                  <SelectItem value="studio">Studio</SelectItem>
                 </SelectContent>
               </Select>
             </div>
-          )}
-
-          {currentStep === 3 && (
-            <div>
-              <h2 className="text-2xl font-semibold mb-4">Additional Details</h2>
-              <Input
-                placeholder="Describe any additional details"
-                onChange={(e) => updateCarData('details', e.target.value)}
-                className="bg-gray-700 text-white"
-              />
+            <div className="space-y-2">
+              <Label htmlFor="timeOfDay">Time of Day</Label>
+              <Select onValueChange={(value) => handleInputChange('timeOfDay', value)}>
+                <SelectTrigger id="timeOfDay">
+                  <SelectValue placeholder="Select time of day" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="day">Day</SelectItem>
+                  <SelectItem value="night">Night</SelectItem>
+                  <SelectItem value="sunset">Sunset</SelectItem>
+                  <SelectItem value="dawn">Dawn</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
+          </div>
+        </TabsContent>
+        <TabsContent value="collection">
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label htmlFor="collection">Collection</Label>
+              <Select onValueChange={(value) => handleInputChange('collectionId', value)}>
+                <SelectTrigger id="collection">
+                  <SelectValue placeholder="Select collection" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="default">Default Collection</SelectItem>
+                  {collections.map((collection) => (
+                    <SelectItem key={collection.id} value={collection.id}>
+                      {collection.title}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </TabsContent>
+      </Tabs>
+      <div className="mt-8 space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="additionalDetails">Additional Details</Label>
+          <Textarea
+            id="additionalDetails"
+            placeholder="Add any additional details or specific requests for your car design..."
+            value={carData.additionalDetails}
+            onChange={(e) => handleInputChange('additionalDetails', e.target.value)}
+            rows={4}
+          />
+        </div>
+        <Button
+          onClick={handleSubmit}
+          disabled={loading}
+          className="w-full"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Generating...
+            </>
+          ) : (
+            'Generate Car'
           )}
-        </div>
-
-        <div className="mt-8 flex justify-between">
-          <Button 
-            onClick={handleBack} 
-            disabled={currentStep === 0 || generatingCar}
-            variant="outline"
-          >
-            Back
-          </Button>
-          <Button 
-            onClick={handleNext}
-            disabled={!isStepComplete() || generatingCar}
-          >
-            {generatingCar ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Generating...
-              </>
-            ) : currentStep === steps.length - 1 ? (
-              'Generate Car'
-            ) : (
-              'Next'
-            )}
-          </Button>
-        </div>
+        </Button>
       </div>
     </div>
   )

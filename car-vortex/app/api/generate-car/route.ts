@@ -35,8 +35,8 @@ export async function POST(req: NextRequest) {
     console.log('Initiating car generation with data:', { type, style, environment, details, collectionId })
 
     // Handle default collection
-    let actualCollectionId = collectionId
-    if (collectionId === 'default') {
+    let actualCollectionId: string
+    if (!collectionId || collectionId === 'default') {
       const defaultCollection = await prisma.collection.findFirst({
         where: { title: 'Default Collection' },
       })
@@ -52,6 +52,8 @@ export async function POST(req: NextRequest) {
         })
         actualCollectionId = newDefaultCollection.id
       }
+    } else {
+      actualCollectionId = collectionId
     }
 
     // Create a pending car entry
