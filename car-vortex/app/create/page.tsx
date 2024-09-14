@@ -55,6 +55,7 @@ export default function CreateCar() {
   useEffect(() => {
     const fetchCollections = async () => {
       try {
+        setLoading(true)
         const response = await fetch('/api/collections')
         if (!response.ok) {
           throw new Error('Failed to fetch collections')
@@ -64,6 +65,8 @@ export default function CreateCar() {
       } catch (error) {
         console.error('Error fetching collections:', error)
         toast.error('Failed to load collections')
+      } finally {
+        setLoading(false)
       }
     }
 
@@ -83,16 +86,7 @@ export default function CreateCar() {
     })
   }
 
-  const isFormValid = () => {
-    return carData.type !== '' && carData.style !== '' && carData.environment !== ''
-  }
-
   const handleSubmit = async () => {
-    if (!isFormValid()) {
-      toast.error('Please fill in all required fields')
-      return
-    }
-
     setLoading(true)
     try {
       const response = await fetch('/api/generate-car', {
@@ -133,10 +127,7 @@ export default function CreateCar() {
         <TabsContent value="basics">
           <div className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="type" className="flex items-center">
-                Car Type
-                <span className="text-red-500 ml-1">*</span>
-              </Label>
+              <Label htmlFor="type">Car Type</Label>
               <Select value={carData.type} onValueChange={(value) => handleInputChange('type', value)}>
                 <SelectTrigger id="type">
                   <SelectValue placeholder="Select car type" />
@@ -150,10 +141,7 @@ export default function CreateCar() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="style" className="flex items-center">
-                Car Style
-                <span className="text-red-500 ml-1">*</span>
-              </Label>
+              <Label htmlFor="style">Car Style</Label>
               <Select value={carData.style} onValueChange={(value) => handleInputChange('style', value)}>
                 <SelectTrigger id="style">
                   <SelectValue placeholder="Select car style" />
@@ -163,23 +151,6 @@ export default function CreateCar() {
                   <SelectItem value="classic">Classic</SelectItem>
                   <SelectItem value="futuristic">Futuristic</SelectItem>
                   <SelectItem value="retro">Retro</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="environment" className="flex items-center">
-                Environment
-                <span className="text-red-500 ml-1">*</span>
-              </Label>
-              <Select value={carData.environment} onValueChange={(value) => handleInputChange('environment', value)}>
-                <SelectTrigger id="environment">
-                  <SelectValue placeholder="Select environment" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="city">City</SelectItem>
-                  <SelectItem value="nature">Nature</SelectItem>
-                  <SelectItem value="studio">Studio</SelectItem>
-                  <SelectItem value="racetrack">Racetrack</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -276,7 +247,7 @@ export default function CreateCar() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="default">Default Collection</SelectItem>
-                  {collections.map((collection) => (
+                  {collections && collections.map((collection) => (
                     <SelectItem key={collection.id} value={collection.id}>
                       {collection.title}
                     </SelectItem>
@@ -300,7 +271,7 @@ export default function CreateCar() {
         </div>
         <Button
           onClick={handleSubmit}
-          disabled={loading || !isFormValid()}
+          disabled={loading || !carData.type || !carData.style || !carData.environment}
           className="w-full"
         >
           {loading ? (

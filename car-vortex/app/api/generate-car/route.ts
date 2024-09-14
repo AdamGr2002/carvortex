@@ -4,7 +4,7 @@ import { prisma } from '@/lib/prisma'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 const REPLICATE_MODEL_VERSION = "39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b"
-const CLOUDINARY_URL = process.env.CLOUDINARY_URL
+const CLOUDINARY_UPLOAD_URL = process.env.CLOUDINARY_UPLOAD_URL
 
 export async function POST(req: NextRequest) {
   try {
@@ -17,8 +17,8 @@ export async function POST(req: NextRequest) {
       throw new Error('Replicate API token not configured')
     }
 
-    if (!CLOUDINARY_URL) {
-      throw new Error('Cloudinary URL not configured')
+    if (!CLOUDINARY_UPLOAD_URL) {
+      throw new Error('Cloudinary upload URL not configured')
     }
 
     const { 
@@ -218,16 +218,16 @@ async function checkPredictionStatus(carId: string, predictionId: string) {
       const imageUrl = prediction.output[0]
       console.log('Generated image URL:', imageUrl)
       
-      // Upload to Cloudinary using the URL from .env
+      // Upload to Cloudinary using the CLOUDINARY_UPLOAD_URL
       console.log('Uploading to Cloudinary')
       const formData = new FormData()
       formData.append('file', imageUrl)
       formData.append('upload_preset', 'car-vortex')
 
-      if (!CLOUDINARY_URL) {
-        throw new Error('Cloudinary URL not configured')
+      if (!CLOUDINARY_UPLOAD_URL) {
+        throw new Error('Cloudinary upload URL not configured')
       }
-      const cloudinaryResponse = await fetch(CLOUDINARY_URL, {
+      const cloudinaryResponse = await fetch(CLOUDINARY_UPLOAD_URL, {
         method: 'POST',
         body: formData,
       })
