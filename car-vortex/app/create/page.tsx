@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client'
 
 import { useState, useEffect } from 'react'
@@ -19,23 +18,39 @@ interface Collection {
   title: string
 }
 
+interface CarData {
+  type: string
+  style: string
+  environment: string
+  bodyColor: string
+  wheelSize: number
+  spoiler: boolean
+  lowered: boolean
+  backgroundScene: string
+  timeOfDay: string
+  collectionId: string
+  additionalDetails: string
+}
+
+const defaultCarData: CarData = {
+  type: '',
+  style: '',
+  environment: '',
+  bodyColor: '#000000',
+  wheelSize: 17,
+  spoiler: false,
+  lowered: false,
+  backgroundScene: 'city',
+  timeOfDay: 'day',
+  collectionId: 'default',
+  additionalDetails: '',
+}
+
 export default function CreateCar() {
   const router = useRouter()
   const [loading, setLoading] = useState(false)
   const [collections, setCollections] = useState<Collection[]>([])
-  const [carData, setCarData] = useState({
-    type: '',
-    style: '',
-    environment: '',
-    bodyColor: '#000000',
-    wheelSize: 17,
-    spoiler: false,
-    lowered: false,
-    backgroundScene: 'city',
-    timeOfDay: 'day',
-    collectionId: 'default',
-    additionalDetails: '',
-  })
+  const [carData, setCarData] = useState<CarData>(defaultCarData)
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -53,10 +68,21 @@ export default function CreateCar() {
     }
 
     fetchCollections()
+
+    // Load saved preferences from local storage
+    const savedPreferences = localStorage.getItem('carPreferences')
+    if (savedPreferences) {
+      setCarData(JSON.parse(savedPreferences))
+    }
   }, [])
 
-  const handleInputChange = (field: string, value: string | number | boolean) => {
-    setCarData(prev => ({ ...prev, [field]: value }))
+  const handleInputChange = (field: keyof CarData, value: string | number | boolean) => {
+    setCarData(prev => {
+      const newData = { ...prev, [field]: value }
+      // Save preferences to local storage
+      localStorage.setItem('carPreferences', JSON.stringify(newData))
+      return newData
+    })
   }
 
   const handleSubmit = async () => {
@@ -101,7 +127,7 @@ export default function CreateCar() {
           <div className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="type">Car Type</Label>
-              <Select onValueChange={(value) => handleInputChange('type', value)}>
+              <Select value={carData.type} onValueChange={(value) => handleInputChange('type', value)}>
                 <SelectTrigger id="type">
                   <SelectValue placeholder="Select car type" />
                 </SelectTrigger>
@@ -115,7 +141,7 @@ export default function CreateCar() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="style">Car Style</Label>
-              <Select onValueChange={(value) => handleInputChange('style', value)}>
+              <Select value={carData.style} onValueChange={(value) => handleInputChange('style', value)}>
                 <SelectTrigger id="style">
                   <SelectValue placeholder="Select car style" />
                 </SelectTrigger>
@@ -182,7 +208,7 @@ export default function CreateCar() {
           <div className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="backgroundScene">Background Scene</Label>
-              <Select onValueChange={(value) => handleInputChange('backgroundScene', value)}>
+              <Select value={carData.backgroundScene} onValueChange={(value) => handleInputChange('backgroundScene', value)}>
                 <SelectTrigger id="backgroundScene">
                   <SelectValue placeholder="Select background scene" />
                 </SelectTrigger>
@@ -196,7 +222,7 @@ export default function CreateCar() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="timeOfDay">Time of Day</Label>
-              <Select onValueChange={(value) => handleInputChange('timeOfDay', value)}>
+              <Select value={carData.timeOfDay} onValueChange={(value) => handleInputChange('timeOfDay', value)}>
                 <SelectTrigger id="timeOfDay">
                   <SelectValue placeholder="Select time of day" />
                 </SelectTrigger>
@@ -214,7 +240,7 @@ export default function CreateCar() {
           <div className="space-y-6">
             <div className="space-y-2">
               <Label htmlFor="collection">Collection</Label>
-              <Select onValueChange={(value) => handleInputChange('collectionId', value)}>
+              <Select value={carData.collectionId} onValueChange={(value) => handleInputChange('collectionId', value)}>
                 <SelectTrigger id="collection">
                   <SelectValue placeholder="Select collection" />
                 </SelectTrigger>
