@@ -34,10 +34,28 @@ const nextConfig = {
           { key: "Access-Control-Allow-Origin", value: "*" },
           { key: "Access-Control-Allow-Methods", value: "GET,OPTIONS,PATCH,DELETE,POST,PUT" },
           { key: "Access-Control-Allow-Headers", value: "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version" },
-        ]
-      }
+        ],
+        source: '/:path*',
+        headers: [
+          {
+            key: 'Content-Security-Policy',
+            value: `
+              default-src 'self';
+              script-src 'self' 'unsafe-eval' 'unsafe-inline';
+              style-src 'self' 'unsafe-inline';
+              img-src 'self' data: blob: https://*.cloudinary.com;
+              font-src 'self';
+              object-src 'none';
+              base-uri 'self';
+              form-action 'self';
+              frame-ancestors 'none';
+              block-all-mixed-content;
+              upgrade-insecure-requests;
+            `.replace(/\s{2,}/g, ' ').trim()
+          },
+        ],
+      },
     ]
+      }
   }
-}
-
 module.exports = nextConfig

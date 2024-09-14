@@ -247,11 +247,15 @@ export default function CreateCar() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="default">Default Collection</SelectItem>
-                  {collections && collections.map((collection) => (
-                    <SelectItem key={collection.id} value={collection.id}>
-                      {collection.title}
-                    </SelectItem>
-                  ))}
+                  {collections && collections.length > 0 ? (
+                    collections.map((collection) => (
+                      <SelectItem key={collection.id} value={collection.id}>
+                        {collection.title}
+                      </SelectItem>
+                    ))
+                  ) : (
+                    <SelectItem value="" disabled>No collections available</SelectItem>
+                  )}
                 </SelectContent>
               </Select>
             </div>
