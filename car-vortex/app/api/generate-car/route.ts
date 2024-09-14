@@ -220,15 +220,16 @@ async function checkPredictionStatus(carId: string, predictionId: string) {
       
       // Upload to Cloudinary using the URL from .env
       console.log('Uploading to Cloudinary')
-      const cloudinaryResponse = await fetch(`${CLOUDINARY_URL}/upload`, {
+      const formData = new FormData()
+      formData.append('file', imageUrl)
+      formData.append('upload_preset', 'car-vortex')
+
+      if (!CLOUDINARY_URL) {
+        throw new Error('Cloudinary URL not configured')
+      }
+      const cloudinaryResponse = await fetch(CLOUDINARY_URL, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          file: imageUrl,
-          upload_preset: 'car-vortex',
-        }),
+        body: formData,
       })
 
       if (!cloudinaryResponse.ok) {
@@ -241,14 +242,14 @@ async function checkPredictionStatus(carId: string, predictionId: string) {
       console.log('Cloudinary upload successful:', cloudinaryData)
 
       // Update car with Cloudinary URL
-      await prisma.car.update({
+      const updatedCar = await prisma.car.update({
         where: { id: carId },
         data: {
           imageUrl: cloudinaryData.secure_url,
           status: 'COMPLETED',
         },
       })
-      console.log('Updated car with Cloudinary URL')
+      console.log('Updated car with Cloudinary URL:', updatedCar)
     } else if (prediction.status === 'failed') {
       console.log('Prediction failed')
       await prisma.car.update({
