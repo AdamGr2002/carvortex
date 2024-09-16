@@ -49,7 +49,6 @@ model Car {
   type        String
   description String
   style       String
-  environment String
   bodyColor      String     @default("#000000")
   wheelSize      Int        @default(17)
   spoiler        Boolean    @default(false)

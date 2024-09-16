@@ -48,7 +48,6 @@ export async function GET(req: Request) {
       description: car.description,
       type: car.type,
       style: car.style,
-      environment: car.environment,
       votes: car.votes,
       userDisplayName: car.user.name || car.user.email.split('@')[0],
     }))

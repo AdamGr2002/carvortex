@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import Image from 'next/image'
 import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -19,18 +19,14 @@ interface Car {
 }
 
 export default function FeaturedCars() {
-  const [cars, setCars] = useState<Car[]>([])
+  const [carsMap, setCarsMap] = useState<Map<string, Car>>(new Map())
   const [loading, setLoading] = useState(true)
   const [likedCars, setLikedCars] = useState<Set<string>>(new Set())
   const [currentPage, setCurrentPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const { isSignedIn } = useAuth()
 
-  useEffect(() => {
-    fetchCars()
-  }, [currentPage])
-
-  const fetchCars = async () => {
+  const fetchCars = useCallback(async () => {
     try {
       setLoading(true)
       const response = await fetch(`/api/featured-cars?limit=10&page=${currentPage}`)
@@ -38,7 +34,15 @@ export default function FeaturedCars() {
         throw new Error('Failed to fetch cars')
       }
       const data = await response.json()
-      setCars(data.cars)
+      setCarsMap(prevMap => {
+        const newMap = new Map(prevMap)
+        data.cars.forEach((car: Car) => {
+          if (!newMap.has(car.id)) {
+            newMap.set(car.id, car)
+          }
+        })
+        return newMap
+      })
       setTotalPages(data.totalPages)
     } catch (error) {
       console.error('Error fetching cars:', error)
@@ -46,7 +50,11 @@ export default function FeaturedCars() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [currentPage])
+
+  useEffect(() => {
+    fetchCars()
+  }, [fetchCars])
 
   const handleLike = async (carId: string) => {
     if (!isSignedIn) {
@@ -56,29 +64,27 @@ export default function FeaturedCars() {
 
     try {
       // Optimistic update
-      setLikedCars((prev) => {
+      setLikedCars(prev => {
         const newSet = new Set(prev)
-        if (newSet.has(carId)) {
-          newSet.delete(carId)
-        } else {
-          newSet.add(carId)
-        }
+        newSet.has(carId) ? newSet.delete(carId) : newSet.add(carId)
         return newSet
       })
 
-      setCars((prev) =>
-        prev.map((car) =>
-          car.id === carId
-            ? { ...car, likes: likedCars.has(carId) ? car.likes - 1 : car.likes + 1 }
-            : car
-        )
-      )
+      setCarsMap(prev => {
+        const newMap = new Map(prev)
+        const car = newMap.get(carId)
+        if (car) {
+          newMap.set(carId, {
+            ...car,
+            likes: likedCars.has(carId) ? car.likes - 1 : car.likes + 1
+          })
+        }
+        return newMap
+      })
 
       const response = await fetch(`/car-design/${carId}/like`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
       })
 
       if (!response.ok) {
@@ -87,48 +93,47 @@ export default function FeaturedCars() {
 
       const data = await response.json()
 
-      // Update the likes count with the actual value from the server
-      setCars((prev) =>
-        prev.map((car) =>
-          car.id === carId ? { ...car, likes: data.likes } : car
-        )
-      )
-
-      // Update the liked state based on the server response
-      setLikedCars((prev) => {
-        const newSet = new Set(prev)
-        if (data.liked) {
-          newSet.add(carId)
-        } else {
-          newSet.delete(carId)
+      // Update with server data
+      setCarsMap(prev => {
+        const newMap = new Map(prev)
+        const car = newMap.get(carId)
+        if (car) {
+          newMap.set(carId, { ...car, likes: data.likes })
         }
+        return newMap
+      })
+
+      setLikedCars(prev => {
+        const newSet = new Set(prev)
+        data.liked ? newSet.add(carId) : newSet.delete(carId)
         return newSet
       })
 
       toast.success(data.liked ? 'Car liked!' : 'Like removed')
-
     } catch (error) {
       console.error('Error liking car:', error)
       toast.error('Failed to like car')
-      // Revert the optimistic update
-      setLikedCars((prev) => {
+      // Revert optimistic update
+      setLikedCars(prev => {
         const newSet = new Set(prev)
-        if (newSet.has(carId)) {
-          newSet.delete(carId)
-        } else {
-          newSet.add(carId)
-        }
+        newSet.has(carId) ? newSet.delete(carId) : newSet.add(carId)
         return newSet
       })
-      setCars((prev) =>
-        prev.map((car) =>
-          car.id === carId
-            ? { ...car, likes: likedCars.has(carId) ? car.likes + 1 : car.likes - 1 }
-            : car
-        )
-      )
+      setCarsMap(prev => {
+        const newMap = new Map(prev)
+        const car = newMap.get(carId)
+        if (car) {
+          newMap.set(carId, {
+            ...car,
+            likes: likedCars.has(carId) ? car.likes + 1 : car.likes - 1
+          })
+        }
+        return newMap
+      })
     }
   }
+
+  const cars = Array.from(carsMap.values())
 
   if (loading && cars.length === 0) {
     return (

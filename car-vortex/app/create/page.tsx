@@ -1,6 +1,7 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect,useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -21,7 +22,6 @@ interface Collection {
 interface CarData {
   type: string
   style: string
-  environment: string
   bodyColor: string
   wheelSize: number
   spoiler: boolean
@@ -35,7 +35,6 @@ interface CarData {
 const defaultCarData: CarData = {
   type: '',
   style: '',
-  environment: '',
   bodyColor: '#000000',
   wheelSize: 17,
   spoiler: false,
@@ -51,6 +50,8 @@ export default function CreateCar() {
   const [loading, setLoading] = useState(false)
   const [collections, setCollections] = useState<Collection[]>([])
   const [carData, setCarData] = useState<CarData>(defaultCarData)
+  const [isFormValid, setIsFormValid] = useState(false)
+  const [imageError, setImageError] = useState(false)
 
   useEffect(() => {
     const fetchCollections = async () => {
@@ -78,6 +79,16 @@ export default function CreateCar() {
     }
   }, [])
 
+  const checkFormValidity = useCallback(() => {
+    const isValid = Boolean(carData.type && carData.style)
+    setIsFormValid(isValid)
+    console.log("Form validity checked:", isValid, carData) // Debug log
+  }, [carData.type, carData.style,])
+
+  useEffect(() => {
+    checkFormValidity()
+  }, [checkFormValidity])
+
   const handleInputChange = (field: keyof CarData, value: string | number | boolean) => {
     setCarData(prev => {
       const newData = { ...prev, [field]: value }
@@ -86,14 +97,14 @@ export default function CreateCar() {
     })
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!isFormValid) return
     setLoading(true)
     try {
       const response = await fetch('/api/generate-car', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(carData),
       })
 
@@ -103,6 +114,7 @@ export default function CreateCar() {
       }
 
       const data = await response.json()
+      console.log('Car generation response:', data)
       toast.success('Car generation started!')
       router.push(`/results/${data.id}`)
     } catch (error) {
@@ -113,8 +125,10 @@ export default function CreateCar() {
     }
   }
 
+  console.log("Render - Car data:", carData, "Is form valid:", isFormValid) // Debug log
+
   return (
-    <div className="container mx-auto py-8 px-4 max-w-4xl">
+    <form onSubmit={handleSubmit} className="container mx-auto py-8 px-4 max-w-4xl">
       <h1 className="text-4xl font-bold mb-8 text-center">Create Your Dream Car</h1>
       <Tabs defaultValue="basics" className="w-full">
         <TabsList className="grid w-full grid-cols-5 mb-8">
@@ -127,9 +141,9 @@ export default function CreateCar() {
         <TabsContent value="basics">
           <div className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="type">Car Type</Label>
+              <Label htmlFor="car-type">Car Type</Label>
               <Select value={carData.type} onValueChange={(value) => handleInputChange('type', value)}>
-                <SelectTrigger id="type">
+                <SelectTrigger id="car-type">
                   <SelectValue placeholder="Select car type" />
                 </SelectTrigger>
                 <SelectContent>
@@ -141,9 +155,9 @@ export default function CreateCar() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="style">Car Style</Label>
+              <Label htmlFor="car-style">Car Style</Label>
               <Select value={carData.style} onValueChange={(value) => handleInputChange('style', value)}>
-                <SelectTrigger id="style">
+                <SelectTrigger id="car-style">
                   <SelectValue placeholder="Select car style" />
                 </SelectTrigger>
                 <SelectContent>
@@ -159,10 +173,10 @@ export default function CreateCar() {
         <TabsContent value="exterior">
           <div className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="bodyColor">Body Color</Label>
+              <Label htmlFor="body-color">Body Color</Label>
               <div className="flex items-center space-x-4">
                 <Input
-                  id="bodyColor"
+                  id="body-color"
                   type="color"
                   value={carData.bodyColor}
                   onChange={(e) => handleInputChange('bodyColor', e.target.value)}
@@ -172,9 +186,9 @@ export default function CreateCar() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="wheelSize">Wheel Size</Label>
+              <Label htmlFor="wheel-size">Wheel Size</Label>
               <Slider
-                id="wheelSize"
+                id="wheel-size"
                 min={15}
                 max={22}
                 step={1}
@@ -208,9 +222,9 @@ export default function CreateCar() {
         <TabsContent value="environment">
           <div className="space-y-6">
             <div className="space-y-2">
-              <Label htmlFor="backgroundScene">Background Scene</Label>
+              <Label htmlFor="background-scene">Background Scene</Label>
               <Select value={carData.backgroundScene} onValueChange={(value) => handleInputChange('backgroundScene', value)}>
-                <SelectTrigger id="backgroundScene">
+                <SelectTrigger id="background-scene">
                   <SelectValue placeholder="Select background scene" />
                 </SelectTrigger>
                 <SelectContent>
@@ -222,9 +236,9 @@ export default function CreateCar() {
               </Select>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="timeOfDay">Time of Day</Label>
+              <Label htmlFor="time-of-day">Time of Day</Label>
               <Select value={carData.timeOfDay} onValueChange={(value) => handleInputChange('timeOfDay', value)}>
-                <SelectTrigger id="timeOfDay">
+                <SelectTrigger id="time-of-day">
                   <SelectValue placeholder="Select time of day" />
                 </SelectTrigger>
                 <SelectContent>
@@ -264,9 +278,9 @@ export default function CreateCar() {
       </Tabs>
       <div className="mt-8 space-y-4">
         <div className="space-y-2">
-          <Label htmlFor="additionalDetails">Additional Details</Label>
+          <Label htmlFor="additional-details">Additional Details</Label>
           <Textarea
-            id="additionalDetails"
+            id="additional-details"
             placeholder="Add any additional details or specific requests for your car design..."
             value={carData.additionalDetails}
             onChange={(e) => handleInputChange('additionalDetails', e.target.value)}
@@ -274,9 +288,9 @@ export default function CreateCar() {
           />
         </div>
         <Button
-          onClick={handleSubmit}
-          disabled={loading || !carData.type || !carData.style || !carData.environment}
-          className="w-full"
+          type="submit"
+          disabled={loading || !isFormValid}
+          className={`w-full ${!isFormValid ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
           {loading ? (
             <>
@@ -288,6 +302,6 @@ export default function CreateCar() {
           )}
         </Button>
       </div>
-    </div>
+    </form>
   )
 }

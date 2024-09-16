@@ -102,13 +102,13 @@ export default function ThemedCollections() {
       <h1 className="text-3xl font-bold mb-6">Themed Collections</h1>
       <Tabs value={activeCollection} onValueChange={setActiveCollection}>
         <TabsList className="grid w-full grid-cols-3">
-          {collections.map((collection) => (
+          {collections?.map((collection) => (
             <TabsTrigger key={collection.id} value={collection.id}>
               {collection.title}
             </TabsTrigger>
-          ))}
+          )) ?? <div>No collections available</div>}
         </TabsList>
-        {collections.map((collection) => (
+        {collections?.map((collection) => (
           <TabsContent key={collection.id} value={collection.id}>
             <Card>
               <CardHeader>
@@ -118,7 +118,7 @@ export default function ThemedCollections() {
               <CardContent>
                 <ScrollArea className="h-[400px] w-full">
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {collection.cars.map((car) => (
+                    {collection.cars?.map((car) => (
                       <Card key={car.id}>
                         <CardContent className="p-0">
                           <img src={car.imageUrl} alt={car.title} className="w-full h-40 object-cover" />
@@ -138,13 +138,13 @@ export default function ThemedCollections() {
                           </div>
                         </CardFooter>
                       </Card>
-                    ))}
+                    )) ?? <div>No cars in this collection</div>}
                   </div>
                 </ScrollArea>
               </CardContent>
             </Card>
           </TabsContent>
-        ))}
+        )) ?? <div>No collections to display</div>}
       </Tabs>
     </div>
   )

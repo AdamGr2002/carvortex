@@ -8,6 +8,22 @@ export async function GET(req: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1', 10)
     const skip = (page - 1) * limit
 
+    if (page < 1) {
+      return NextResponse.json({ error: 'Invalid page number' }, { status: 400 })
+    }
+
+    const totalCars = await prisma.car.count({
+      where: {
+        status: 'COMPLETED',
+      },
+    })
+
+    const totalPages = Math.ceil(totalCars / limit)
+
+    if (page > totalPages) {
+      return NextResponse.json({ error: 'Page number exceeds total pages' }, { status: 400 })
+    }
+
     const cars = await prisma.car.findMany({
       where: {
         status: 'COMPLETED',
@@ -25,17 +41,15 @@ export async function GET(req: NextRequest) {
           },
         },
       },
+      distinct: ['id'], // Ensure we're not getting duplicates
     })
 
-    const totalCars = await prisma.car.count({
-      where: {
-        status: 'COMPLETED',
-      },
-    })
+    console.log(`Fetched ${cars.length} cars for page ${page}`)
+    console.log('Car IDs:', cars.map(car => car.id))
 
     return NextResponse.json({
       cars,
-      totalPages: Math.ceil(totalCars / limit),
+      totalPages,
       currentPage: page,
     })
   } catch (error) {

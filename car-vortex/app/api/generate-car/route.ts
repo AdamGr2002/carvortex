@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
 import { prisma } from '@/lib/prisma'
+import cloudinary from '@/lib/cloudinary'
 
 const REPLICATE_API_TOKEN = process.env.REPLICATE_API_TOKEN
 const REPLICATE_MODEL_VERSION = "39ed52f2a78e934b3ba6e2a89f5b1c712de7dfea535525255b1aa35c5565e08b"
@@ -23,19 +24,19 @@ export async function POST(req: NextRequest) {
 
     const { 
       type, 
-      style, 
-      environment, 
+      style,  
       bodyColor, 
       wheelSize, 
       spoiler, 
       lowered, 
       backgroundScene, 
       timeOfDay, 
+      
       collectionId, 
       additionalDetails 
     } = await req.json()
 
-    if (!type || !style || !environment) {
+    if (!type || !style ) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
@@ -51,7 +52,6 @@ export async function POST(req: NextRequest) {
     console.log('Initiating car generation with data:', { 
       type, 
       style, 
-      environment, 
       bodyColor, 
       wheelSize, 
       spoiler, 
@@ -88,11 +88,10 @@ export async function POST(req: NextRequest) {
     // Create a pending car entry
     const pendingCar = await prisma.car.create({
       data: {
-        title: `${style} ${type} in ${environment}`,
-        description: `A ${style} ${type} car designed for a ${environment} environment. ${additionalDetails}`,
+        title: `${style} ${type}`,
+        description: `A ${style} ${type} car designed ${additionalDetails}`,
         type,
         style,
-        environment,
         bodyColor,
         wheelSize,
         spoiler,
@@ -127,7 +126,7 @@ export async function POST(req: NextRequest) {
     console.log('Deducted credit from user')
 
     // Start the car generation process
-    const fullPrompt = `A highly detailed, professional photograph of a ${type} car, ${style} style, in a ${environment} environment. 
+    const fullPrompt = `A highly detailed, professional photograph of a ${type} car, ${style} style. 
     Body color: ${bodyColor}. Wheel size: ${wheelSize} inches. 
     ${spoiler ? 'With a spoiler.' : 'Without a spoiler.'} 
     ${lowered ? 'Lowered suspension.' : 'Standard suspension.'} 
@@ -188,6 +187,7 @@ export async function POST(req: NextRequest) {
       car: {
         ...pendingCar,
         user: { name: user.name },
+        imageUrl: pendingCar.imageUrl, // Make sure this is included
       },
     })
 
@@ -218,38 +218,26 @@ async function checkPredictionStatus(carId: string, predictionId: string) {
       const imageUrl = prediction.output[0]
       console.log('Generated image URL:', imageUrl)
       
-      // Upload to Cloudinary using the CLOUDINARY_UPLOAD_URL
-      console.log('Uploading to Cloudinary')
-      const formData = new FormData()
-      formData.append('file', imageUrl)
-      formData.append('upload_preset', 'car-vortex')
+      try {
+        const uploadResult = await cloudinary.uploader.upload(imageUrl, {
+          folder: 'car-vortex', // Specify the folder in your Cloudinary account
+          resource_type: 'auto', // Automatically detect resource type
+        })
+        console.log('Cloudinary upload result:', uploadResult)
 
-      if (!CLOUDINARY_UPLOAD_URL) {
-        throw new Error('Cloudinary upload URL not configured')
-      }
-      const cloudinaryResponse = await fetch(CLOUDINARY_UPLOAD_URL, {
-        method: 'POST',
-        body: formData,
-      })
-
-      if (!cloudinaryResponse.ok) {
-        const errorData = await cloudinaryResponse.json()
-        console.error('Cloudinary upload error:', errorData)
+        const updatedCar = await prisma.car.update({
+          where: { id: carId },
+          data: {
+            imageUrl: uploadResult.secure_url,
+            status: 'COMPLETED',
+          },
+        })
+        console.log('Updated car with Cloudinary URL:', updatedCar)
+        await notifyClientImageReady(carId, uploadResult.secure_url)
+      } catch (cloudinaryError) {
+        console.error('Cloudinary upload error:', cloudinaryError)
         throw new Error('Failed to upload image to Cloudinary')
       }
-
-      const cloudinaryData = await cloudinaryResponse.json()
-      console.log('Cloudinary upload successful:', cloudinaryData)
-
-      // Update car with Cloudinary URL
-      const updatedCar = await prisma.car.update({
-        where: { id: carId },
-        data: {
-          imageUrl: cloudinaryData.secure_url,
-          status: 'COMPLETED',
-        },
-      })
-      console.log('Updated car with Cloudinary URL:', updatedCar)
     } else if (prediction.status === 'failed') {
       console.log('Prediction failed')
       await prisma.car.update({
@@ -268,4 +256,13 @@ async function checkPredictionStatus(carId: string, predictionId: string) {
       data: { status: 'FAILED' },
     })
   }
+}
+
+async function notifyClientImageReady(carId: string, imageUrl: string) {
+  // In a real-world scenario, you'd use WebSockets or Server-Sent Events here
+  // For now, we'll just update the car status
+  await prisma.car.update({
+    where: { id: carId },
+    data: { status: 'COMPLETED', imageUrl: imageUrl },
+  })
 }

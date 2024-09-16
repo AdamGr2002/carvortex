@@ -148,7 +148,6 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
         })
       }
     }
-
     // If the car is already completed or failed, just return its current status
     console.log('Returning current car status:', car.status)
     return NextResponse.json({

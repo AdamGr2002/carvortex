@@ -14,6 +14,7 @@ interface Car {
   title: string
   description: string
   votes: number
+  status: string
 }
 
 export default function CarResults() {
@@ -29,16 +30,24 @@ export default function CarResults() {
           throw new Error('Failed to fetch car')
         }
         const data = await response.json()
+        console.log('Fetched car data:', data)
         setCar(data)
+        if (data.status === 'COMPLETED') {
+          clearInterval(pollingInterval)
+        }
       } catch (error) {
         console.error('Error fetching car:', error)
         toast.error('Failed to load car details')
+        clearInterval(pollingInterval)
       } finally {
         setIsLoading(false)
       }
     }
 
     fetchCar()
+    const pollingInterval = setInterval(fetchCar, 5000) // Poll every 5 seconds
+
+    return () => clearInterval(pollingInterval)
   }, [id])
 
   const handleShare = () => {
@@ -97,7 +106,21 @@ export default function CarResults() {
       <h1 className="text-3xl font-bold mb-6">{car.title}</h1>
       <Card className="overflow-hidden">
         <CardContent className="p-0">
-          <img src={car.imageUrl} alt={car.title} className="w-full h-auto" />
+          {car?.imageUrl ? (
+            <img 
+              src={car.imageUrl} 
+              alt={car.title} 
+              className="w-full h-auto max-w-2xl mx-auto"
+              onError={(e) => {
+                console.error('Error loading image:', e)
+                // Remove setImageError as it's not defined
+              }}
+            />
+          ) : (
+            <div className="w-full h-64 flex items-center justify-center bg-gray-200">
+              {car?.status === 'PENDING' ? 'Generating image...' : 'No image available'}
+            </div>
+          )}
         </CardContent>
       </Card>
       <p className="mt-4 text-lg">{car.description}</p>
