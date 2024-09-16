@@ -67,7 +67,6 @@ export async function POST(req: NextRequest) {
         description,
         style,
         type: 'car',
-        environment,
         userId,
         status: 'PENDING',
         likes: 0,
